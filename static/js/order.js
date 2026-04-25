@@ -1,6 +1,6 @@
 const CUSTOMER_STORAGE_KEY = "fit4work_customer_name";
 
-const customerGate = document.getElementById("customer-gate");
+const customerModal = document.getElementById("customer-modal");
 const customerInput = document.getElementById("customer-name-input");
 const customerNameDisplay = document.getElementById("customer-name-display");
 const saveCustomerButton = document.getElementById("save-customer-button");
@@ -12,9 +12,10 @@ const shippingStatusLabel = document.getElementById("shipping-status-label");
 const shippingProgressBar = document.getElementById("shipping-progress-bar");
 const selectedCountLabel = document.getElementById("selected-count-label");
 const floatingTotalLabel = document.getElementById("floating-total-label");
+const openMiniOrderButton = document.getElementById("open-mini-order-button");
 const openConfirmButton = document.getElementById("open-confirm-button");
 const confirmModal = document.getElementById("confirm-modal");
-const modalCustomerName = document.getElementById("modal-customer-name");
+const confirmCustomerInput = document.getElementById("confirm-customer-input");
 const modalItems = document.getElementById("modal-items");
 const modalTotalQty = document.getElementById("modal-total-qty");
 const modalTotalAmount = document.getElementById("modal-total-amount");
@@ -23,9 +24,15 @@ const submitConfirmButton = document.getElementById("submit-confirm-button");
 const completeModal = document.getElementById("complete-modal");
 const completeOrderId = document.getElementById("complete-order-id");
 const completeCloseButton = document.getElementById("complete-close-button");
+const miniOrderSheet = document.getElementById("mini-order-sheet");
+const closeMiniOrderButton = document.getElementById("close-mini-order-button");
+const miniOrderItems = document.getElementById("mini-order-items");
+const miniTotalQty = document.getElementById("mini-total-qty");
+const miniTotalAmount = document.getElementById("mini-total-amount");
 
 const freeShippingThreshold = Number(document.body.dataset.freeShippingThreshold || 100000);
 const cart = {};
+let isCustomerModalRequired = true;
 
 function cssEscape(value) {
   if (window.CSS && typeof window.CSS.escape === "function") {
@@ -51,10 +58,15 @@ function syncCustomerUI() {
   const hasCustomer = Boolean(customerName);
 
   customerNameDisplay.textContent = customerName || "입력 필요";
-  customerGate.classList.toggle("is-hidden", hasCustomer);
   orderSection.classList.toggle("is-locked", !hasCustomer);
   orderSection.setAttribute("aria-hidden", String(!hasCustomer));
   customerInput.value = customerName;
+
+  if (!hasCustomer) {
+    openCustomerModal(true);
+  } else {
+    closeCustomerModal();
+  }
 }
 
 function ensureCartProduct(productCode) {
@@ -69,7 +81,15 @@ function getQty(productCode, size) {
 
 function setQty(productCode, size, qty) {
   ensureCartProduct(productCode);
-  cart[productCode][size] = Math.max(0, qty);
+  const nextQty = Math.max(0, qty);
+  if (nextQty === 0) {
+    delete cart[productCode][size];
+    if (Object.keys(cart[productCode]).length === 0) {
+      delete cart[productCode];
+    }
+    return;
+  }
+  cart[productCode][size] = nextQty;
 }
 
 function getProductCard(productCode) {
@@ -92,6 +112,21 @@ function updateProductPanel(productCode) {
 
   panel.querySelector("[data-active-qty]").textContent = String(qty);
   panel.querySelector("[data-line-total]").textContent = formatCurrency(unitPrice * qty);
+}
+
+function updateAllProductPanels() {
+  document.querySelectorAll("[data-quantity-panel]").forEach((panel) => {
+    updateProductPanel(panel.dataset.productCode);
+  });
+}
+
+function refreshOrderViews() {
+  updateAllProductPanels();
+  renderSummary();
+  if (!confirmModal.classList.contains("is-hidden")) {
+    buildModal();
+    updateConfirmSubmitState();
+  }
 }
 
 function getCartItems() {
@@ -145,6 +180,10 @@ function renderSummary() {
   }
 
   openConfirmButton.disabled = totalQty === 0 || !getCustomerName();
+
+  if (!miniOrderSheet.classList.contains("is-hidden")) {
+    renderMiniOrderSheet();
+  }
 }
 
 function handleSizeClick(button) {
@@ -188,9 +227,21 @@ function filterCategory(category) {
   });
 }
 
+function initializeCategoryTabs() {
+  const defaultTab = categoryTabs.querySelector('[data-category="전체"]');
+  if (!defaultTab) {
+    return;
+  }
+
+  categoryTabs.querySelectorAll("[data-category]").forEach((tab) => {
+    tab.classList.toggle("is-active", tab === defaultTab);
+  });
+  filterCategory("전체");
+}
+
 function buildModal() {
   const { items, totalQty, totalAmount } = getTotals();
-  modalCustomerName.textContent = getCustomerName();
+  confirmCustomerInput.value = getCustomerName();
   modalTotalQty.textContent = `${totalQty}장`;
   modalTotalAmount.textContent = formatCurrency(totalAmount);
   modalItems.innerHTML = "";
@@ -212,6 +263,67 @@ function buildModal() {
   });
 }
 
+function renderMiniOrderSheet() {
+  const { items, totalQty, totalAmount } = getTotals();
+  miniOrderItems.innerHTML = "";
+  miniTotalQty.textContent = `${totalQty}장`;
+  miniTotalAmount.textContent = formatCurrency(totalAmount);
+
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "mini-order-empty";
+    empty.textContent = "선택한 상품이 없습니다.";
+    miniOrderItems.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "mini-order-item";
+    row.dataset.productCode = item.product_code;
+    row.dataset.size = item.size;
+
+    const info = document.createElement("div");
+    info.className = "mini-order-info";
+
+    const title = document.createElement("strong");
+    title.textContent = item.product_name;
+
+    const detail = document.createElement("span");
+    detail.textContent = `${item.product_code} / ${item.size} / ${item.qty}장`;
+    info.append(title, detail);
+
+    const controls = document.createElement("div");
+    controls.className = "mini-order-controls";
+
+    const minusButton = document.createElement("button");
+    minusButton.type = "button";
+    minusButton.className = "mini-qty-button";
+    minusButton.dataset.miniAction = "decrease";
+    minusButton.textContent = "-";
+
+    const qtyValue = document.createElement("strong");
+    qtyValue.className = "mini-qty-value";
+    qtyValue.textContent = String(item.qty);
+
+    const plusButton = document.createElement("button");
+    plusButton.type = "button";
+    plusButton.className = "mini-qty-button";
+    plusButton.dataset.miniAction = "increase";
+    plusButton.textContent = "+";
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "mini-delete-button";
+    deleteButton.dataset.miniAction = "delete";
+    deleteButton.textContent = "삭제";
+
+    controls.append(minusButton, qtyValue, plusButton, deleteButton);
+    row.append(info, controls);
+    miniOrderItems.appendChild(row);
+  });
+}
+
 function openModal(modal) {
   modal.classList.remove("is-hidden");
   modal.setAttribute("aria-hidden", "false");
@@ -220,6 +332,29 @@ function openModal(modal) {
 function closeModal(modal) {
   modal.classList.add("is-hidden");
   modal.setAttribute("aria-hidden", "true");
+}
+
+function openCustomerModal(isRequired = false) {
+  isCustomerModalRequired = isRequired;
+  customerModal.classList.remove("is-hidden");
+  customerModal.setAttribute("aria-hidden", "false");
+  window.setTimeout(() => customerInput.focus(), 50);
+}
+
+function closeCustomerModal() {
+  customerModal.classList.add("is-hidden");
+  customerModal.setAttribute("aria-hidden", "true");
+}
+
+function openSheet(sheet) {
+  renderMiniOrderSheet();
+  sheet.classList.remove("is-hidden");
+  sheet.setAttribute("aria-hidden", "false");
+}
+
+function closeSheet(sheet) {
+  sheet.classList.add("is-hidden");
+  sheet.setAttribute("aria-hidden", "true");
 }
 
 function resetCart() {
@@ -233,8 +368,56 @@ function resetCart() {
   renderSummary();
 }
 
+function handleMiniOrderAction(button) {
+  const row = button.closest(".mini-order-item");
+  if (!row) {
+    return;
+  }
+
+  const productCode = row.dataset.productCode;
+  const size = row.dataset.size;
+  const currentQty = getQty(productCode, size);
+
+  if (button.dataset.miniAction === "increase") {
+    setQty(productCode, size, currentQty + 1);
+  }
+
+  if (button.dataset.miniAction === "decrease") {
+    setQty(productCode, size, currentQty - 1);
+  }
+
+  if (button.dataset.miniAction === "delete") {
+    setQty(productCode, size, 0);
+  }
+
+  refreshOrderViews();
+}
+
+function resetCustomer() {
+  localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+  customerNameDisplay.textContent = "입력 필요";
+  customerInput.value = "";
+  confirmCustomerInput.value = "";
+  orderSection.classList.add("is-locked");
+  orderSection.setAttribute("aria-hidden", "true");
+}
+
+function updateConfirmSubmitState() {
+  submitConfirmButton.disabled = !confirmCustomerInput.value.trim();
+}
+
 async function submitOrder() {
   const { items, totalQty, totalAmount } = getTotals();
+  const customerName = confirmCustomerInput.value.trim();
+
+  if (!customerName) {
+    confirmCustomerInput.focus();
+    updateConfirmSubmitState();
+    return;
+  }
+
+  setCustomerName(customerName);
+  customerNameDisplay.textContent = customerName;
 
   submitConfirmButton.disabled = true;
   submitConfirmButton.textContent = "전송 중...";
@@ -246,7 +429,7 @@ async function submitOrder() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        customer_name: getCustomerName(),
+        customer_name: customerName,
         items: items.map((item) => ({
           product_code: item.product_code,
           size: item.size,
@@ -268,6 +451,7 @@ async function submitOrder() {
     completeOrderId.textContent = result.order_id || "-";
     openModal(completeModal);
     resetCart();
+    resetCustomer();
   } catch (_error) {
     alert("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
   } finally {
@@ -295,10 +479,8 @@ customerInput.addEventListener("keydown", (event) => {
 });
 
 changeCustomerButton.addEventListener("click", () => {
-  localStorage.removeItem(CUSTOMER_STORAGE_KEY);
-  syncCustomerUI();
-  renderSummary();
-  customerInput.focus();
+  customerInput.value = getCustomerName();
+  openCustomerModal(false);
 });
 
 categoryTabs.addEventListener("click", (event) => {
@@ -328,14 +510,49 @@ orderSection.addEventListener("click", (event) => {
 
 openConfirmButton.addEventListener("click", () => {
   buildModal();
+  updateConfirmSubmitState();
   openModal(confirmModal);
 });
 
+openMiniOrderButton.addEventListener("click", () => openSheet(miniOrderSheet));
+closeMiniOrderButton.addEventListener("click", () => closeSheet(miniOrderSheet));
+miniOrderSheet.addEventListener("click", (event) => {
+  const miniActionButton = event.target.closest("[data-mini-action]");
+  if (miniActionButton) {
+    handleMiniOrderAction(miniActionButton);
+    return;
+  }
+
+  if (event.target.closest("[data-sheet-close]")) {
+    closeSheet(miniOrderSheet);
+  }
+});
+
+customerModal.addEventListener("click", (event) => {
+  if (!event.target.closest("[data-customer-modal-backdrop]")) {
+    return;
+  }
+  if (!isCustomerModalRequired && getCustomerName()) {
+    closeCustomerModal();
+  }
+});
+
+confirmModal.addEventListener("click", (event) => {
+  if (event.target.closest("[data-confirm-modal-backdrop]")) {
+    closeModal(confirmModal);
+  }
+});
+
+confirmCustomerInput.addEventListener("input", updateConfirmSubmitState);
 closeConfirmButton.addEventListener("click", () => closeModal(confirmModal));
 submitConfirmButton.addEventListener("click", submitOrder);
-completeCloseButton.addEventListener("click", () => closeModal(completeModal));
+completeCloseButton.addEventListener("click", () => {
+  closeModal(completeModal);
+  syncCustomerUI();
+});
 
 syncCustomerUI();
+initializeCategoryTabs();
 document.querySelectorAll("[data-quantity-panel]").forEach((panel) => {
   updateProductPanel(panel.dataset.productCode);
 });

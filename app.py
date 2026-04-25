@@ -40,7 +40,7 @@ ORDERS_LOG_FILE = BASE_DIR / "orders_log.csv"
 FAILED_ORDERS_FILE = BASE_DIR / "failed_orders.csv"
 PLACEHOLDER_FILE = IMAGE_DIR / "placeholder.webp"
 
-PRODUCT_HEADERS = ["품목코드", "상품명", "카테고리", "도매가", "사이즈", "이미지파일", "노출", "정렬순서"]
+PRODUCT_HEADERS = ["품목코드", "상품명", "설명", "카테고리", "도매가", "사이즈", "이미지파일", "노출", "정렬순서"]
 PRODUCT_REQUIRED_HEADERS = ["품목코드", "상품명", "카테고리", "도매가", "사이즈", "이미지파일", "노출"]
 ORDER_HEADERS = [
     "created_at",
@@ -97,9 +97,9 @@ def create_sample_products_xlsx() -> None:
     sheet = workbook.active
     sheet.title = "products"
     sheet.append(PRODUCT_HEADERS)
-    sheet.append(["AP-1001-1", "베이직 앞치마", "앞치마", 12000, "S,M,L", "AP-1001-1.webp", "Y", 10])
-    sheet.append(["CC-2001-2", "조리복 상의", "조리복", 28000, "55,66,77", "CC-2001-2.webp", "Y", 20])
-    sheet.append(["HT-3001-1", "위생모", "모자", 7000, "FREE", "HT-3001-1.webp", "Y", 30])
+    sheet.append(["AP-1001-1", "베이직 앞치마", "가볍고 관리가 쉬운 기본 앞치마", "앞치마", 12000, "S,M,L", "AP-1001-1.webp", "Y", 10])
+    sheet.append(["CC-2001-2", "조리복 상의", "매장 유니폼으로 쓰기 좋은 조리복", "조리복", 28000, "55,66,77", "CC-2001-2.webp", "Y", 20])
+    sheet.append(["HT-3001-1", "위생모", "깔끔한 착용감의 기본 위생모", "모자", 7000, "FREE", "HT-3001-1.webp", "Y", 30])
     workbook.save(PRODUCTS_FILE)
 
 
@@ -183,6 +183,7 @@ def normalize_product_row(row: dict) -> dict | None:
     return {
         "product_code": product_code,
         "product_name": product_name,
+        "description": safe_text(row.get("설명")),
         "category": safe_text(row.get("카테고리")),
         "unit_price": unit_price,
         "sizes": sizes,
@@ -596,8 +597,10 @@ def admin_page():
     if not is_admin_authenticated():
         return render_template("admin.html", authenticated=False, products=[], orders=[], failed_orders=[], stats={})
 
-    orders = read_csv_rows(ORDERS_LOG_FILE)[:50]
-    failed_orders = read_csv_rows(FAILED_ORDERS_FILE)[:50]
+    orders = read_csv_rows(ORDERS_LOG_FILE)[:100]
+    failed_orders = read_csv_rows(FAILED_ORDERS_FILE)[:100]
+    for failed_order in failed_orders:
+        failed_order["teams_status"] = "TEAMS_FAIL"
     products = load_products_for_admin()
     stats = {
         "product_count": len(products),

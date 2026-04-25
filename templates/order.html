@@ -11,7 +11,7 @@
     <header class="order-header">
       <div class="header-title-row">
         <h1>간편 주문하기</h1>
-        <button id="change-customer-button" class="change-customer-button" type="button">변경</button>
+        <button id="change-customer-button" class="change-customer-button" type="button">거래처 다시 입력</button>
       </div>
       <div class="header-meta">
         <span>거래처명</span>
@@ -30,19 +30,6 @@
         <div id="shipping-progress-bar" class="progress-fill"></div>
       </div>
     </header>
-
-    <section id="customer-gate" class="customer-panel">
-      <label for="customer-name-input">거래처명</label>
-      <div class="customer-input-row">
-        <input
-          id="customer-name-input"
-          type="text"
-          placeholder="예: 송파해 / 참존가운"
-          autocomplete="organization"
-        >
-        <button id="save-customer-button" class="navy-button" type="button">확인</button>
-      </div>
-    </section>
 
     <nav id="category-tabs" class="category-tabs" aria-label="상품 카테고리">
       <button class="category-tab is-active" type="button" data-category="전체">전체</button>
@@ -69,24 +56,26 @@
               <img class="product-image" src="{{ product.image_url }}" alt="{{ product.product_name }}" loading="lazy">
               <div class="product-info">
                 <strong class="product-name">{{ product.product_name }}</strong>
-                <span class="product-code">{{ product.product_code }}</span>
-                <span class="product-category">{{ product.category }}</span>
+                {% if product.description %}
+                  <span class="product-description">{{ product.description }}</span>
+                {% endif %}
+                <span class="product-meta-line">{{ product.category }} · {{ product.product_code }}</span>
                 <span class="product-price">도매가 {{ "{:,}".format(product.unit_price) }}원</span>
-              </div>
-            </div>
 
-            <div class="size-buttons" role="group" aria-label="{{ product.product_name }} 사이즈 선택">
-              {% for size in product.sizes %}
-                <button
-                  class="size-button {% if loop.first %}is-active{% endif %}"
-                  type="button"
-                  data-size-button
-                  data-product-code="{{ product.product_code }}"
-                  data-size="{{ size }}"
-                >
-                  {{ size }}
-                </button>
-              {% endfor %}
+                <div class="size-buttons" role="group" aria-label="{{ product.product_name }} 사이즈 선택">
+                  {% for size in product.sizes %}
+                    <button
+                      class="size-button {% if loop.first %}is-active{% endif %}"
+                      type="button"
+                      data-size-button
+                      data-product-code="{{ product.product_code }}"
+                      data-size="{{ size }}"
+                    >
+                      {{ size }}
+                    </button>
+                  {% endfor %}
+                </div>
+              </div>
             </div>
 
             <div
@@ -116,20 +105,72 @@
   </main>
 
   <section class="bottom-order-bar">
-    <div class="bottom-left">
-      <span>주문내역</span>
-      <strong id="selected-count-label">선택 상품 0개</strong>
-    </div>
+    <button id="open-mini-order-button" class="bottom-left" type="button">
+      <span class="bottom-cart-icon" aria-hidden="true"></span>
+      <span class="bottom-cart-copy">
+        <span>주문내역</span>
+        <strong id="selected-count-label">선택 상품 0개</strong>
+      </span>
+    </button>
     <button id="open-confirm-button" class="order-button" type="button" disabled>
       <span>주문하기</span>
       <strong id="floating-total-label">0원</strong>
     </button>
   </section>
 
+  <section id="mini-order-sheet" class="sheet is-hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="mini-order-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-header">
+        <h2 id="mini-order-title">미니 주문내역</h2>
+        <button id="close-mini-order-button" class="sheet-close-button" type="button" aria-label="미니 주문내역 닫기">닫기</button>
+      </div>
+      <div id="mini-order-items" class="mini-order-items"></div>
+      <div class="mini-order-summary">
+        <div>
+          <span>총 수량</span>
+          <strong id="mini-total-qty">0장</strong>
+        </div>
+        <div>
+          <span>총 금액</span>
+          <strong id="mini-total-amount">0원</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="customer-modal" class="modal customer-modal is-hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-customer-modal-backdrop></div>
+    <div class="modal-panel customer-modal-panel">
+      <h2>주문 거래처 입력</h2>
+      <p>주문서에 표시될 거래처명입니다.</p>
+      <label for="customer-name-input">거래처명</label>
+      <div class="customer-input-row">
+        <input
+          id="customer-name-input"
+          type="text"
+          placeholder="예: 제일까운 / 제일유니폼"
+          autocomplete="organization"
+        >
+        <button id="save-customer-button" class="navy-button" type="button">확인</button>
+      </div>
+    </div>
+  </section>
+
   <section id="confirm-modal" class="modal is-hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-confirm-modal-backdrop></div>
     <div class="modal-panel">
       <h2>주문 내역 확인</h2>
-      <div class="modal-customer">거래처명 <strong id="modal-customer-name">-</strong></div>
+      <label class="confirm-customer-field" for="confirm-customer-input">
+        <span>거래처명</span>
+        <input
+          id="confirm-customer-input"
+          type="text"
+          placeholder="예: 제일까운 / 제일유니폼"
+          autocomplete="organization"
+        >
+      </label>
       <div id="modal-items" class="modal-items"></div>
       <div class="modal-summary">
         <div>총수량 <strong id="modal-total-qty">0장</strong></div>
