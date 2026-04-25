@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Fit4Work 간편 주문</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
+</head>
+<body data-free-shipping-threshold="{{ free_shipping_threshold }}">
+  <main class="mobile-frame">
+    <header class="order-header">
+      <div class="header-title-row">
+        <h1>간편 주문하기</h1>
+        <button id="change-customer-button" class="change-customer-button" type="button">변경</button>
+      </div>
+      <div class="header-meta">
+        <span>거래처명</span>
+        <strong id="customer-name-display">입력 필요</strong>
+      </div>
+      <div class="header-total-row">
+        <div>
+          <span>총 주문금액</span>
+          <strong id="total-amount-label">0원</strong>
+        </div>
+        <div class="shipping-copy" id="shipping-status-label">
+          무료배송까지 {{ "{:,}".format(free_shipping_threshold) }}원
+        </div>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <div id="shipping-progress-bar" class="progress-fill"></div>
+      </div>
+    </header>
+
+    <section id="customer-gate" class="customer-panel">
+      <label for="customer-name-input">거래처명</label>
+      <div class="customer-input-row">
+        <input
+          id="customer-name-input"
+          type="text"
+          placeholder="예: 송파해 / 참존가운"
+          autocomplete="organization"
+        >
+        <button id="save-customer-button" class="navy-button" type="button">확인</button>
+      </div>
+    </section>
+
+    <nav id="category-tabs" class="category-tabs" aria-label="상품 카테고리">
+      <button class="category-tab is-active" type="button" data-category="전체">전체</button>
+      {% for category in categories %}
+        <button class="category-tab" type="button" data-category="{{ category }}">{{ category }}</button>
+      {% endfor %}
+    </nav>
+
+    <section class="order-notices">
+      <p>※ 표시 금액은 도매가 기준 참고 금액이며, 최종 출고 금액은 주문 확인 후 확정됩니다. (택배비 별도)</p>
+      <p>※ 재고 상황에 따라 일부 품목은 품절 또는 수량 변동이 있을 수 있으며, 해당 경우 별도 안내드립니다.</p>
+    </section>
+
+    <section id="order-section" class="product-list is-locked" aria-hidden="true">
+      {% if products %}
+        {% for product in products %}
+          <article
+            class="product-card"
+            data-product-card
+            data-category="{{ product.category }}"
+            data-product-code="{{ product.product_code }}"
+          >
+            <div class="product-main">
+              <img class="product-image" src="{{ product.image_url }}" alt="{{ product.product_name }}" loading="lazy">
+              <div class="product-info">
+                <strong class="product-name">{{ product.product_name }}</strong>
+                <span class="product-code">{{ product.product_code }}</span>
+                <span class="product-category">{{ product.category }}</span>
+                <span class="product-price">도매가 {{ "{:,}".format(product.unit_price) }}원</span>
+              </div>
+            </div>
+
+            <div class="size-buttons" role="group" aria-label="{{ product.product_name }} 사이즈 선택">
+              {% for size in product.sizes %}
+                <button
+                  class="size-button {% if loop.first %}is-active{% endif %}"
+                  type="button"
+                  data-size-button
+                  data-product-code="{{ product.product_code }}"
+                  data-size="{{ size }}"
+                >
+                  {{ size }}
+                </button>
+              {% endfor %}
+            </div>
+
+            <div
+              class="quantity-panel"
+              data-quantity-panel
+              data-product-code="{{ product.product_code }}"
+              data-product-name="{{ product.product_name }}"
+              data-price="{{ product.unit_price }}"
+              data-active-size="{{ product.sizes[0] }}"
+            >
+              <button type="button" class="qty-button qty-minus" data-action="decrease" aria-label="{{ product.product_name }} 수량 감소">-</button>
+              <div class="qty-center">
+                <strong data-active-qty>0</strong>
+                <span data-line-total>0원</span>
+              </div>
+              <button type="button" class="qty-button qty-plus" data-action="increase" aria-label="{{ product.product_name }} 수량 증가">+</button>
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <section class="empty-state">
+          <h2>표시 가능한 상품이 없습니다.</h2>
+          <p>관리자 페이지에서 products.xlsx를 업로드하면 주문 화면에 반영됩니다.</p>
+        </section>
+      {% endif %}
+    </section>
+  </main>
+
+  <section class="bottom-order-bar">
+    <div class="bottom-left">
+      <span>주문내역</span>
+      <strong id="selected-count-label">선택 상품 0개</strong>
+    </div>
+    <button id="open-confirm-button" class="order-button" type="button" disabled>
+      <span>주문하기</span>
+      <strong id="floating-total-label">0원</strong>
+    </button>
+  </section>
+
+  <section id="confirm-modal" class="modal is-hidden" aria-hidden="true">
+    <div class="modal-panel">
+      <h2>주문 내역 확인</h2>
+      <div class="modal-customer">거래처명 <strong id="modal-customer-name">-</strong></div>
+      <div id="modal-items" class="modal-items"></div>
+      <div class="modal-summary">
+        <div>총수량 <strong id="modal-total-qty">0장</strong></div>
+        <div>총 참고금액 <strong id="modal-total-amount">0원</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button id="close-confirm-button" class="secondary-button" type="button">수정하기</button>
+        <button id="submit-confirm-button" class="confirm-button" type="button">주문 확정</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="complete-modal" class="modal is-hidden" aria-hidden="true">
+    <div class="modal-panel complete-panel">
+      <h2>주문이 접수되었습니다.</h2>
+      <p>주문번호: <strong id="complete-order-id">-</strong></p>
+      <button id="complete-close-button" class="confirm-button" type="button">확인</button>
+    </div>
+  </section>
+
+  <script src="{{ url_for('static', filename='js/order.js') }}"></script>
+</body>
+</html>

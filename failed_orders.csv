@@ -1,0 +1,4 @@
+﻿created_at,order_id,customer_name,items,total_qty,total_amount,error_message
+2026-04-26 00:56:31,F4W-20260426-001,오징어가운,"AP-1001-1 / M / 2장
+CC-2001-2 / 66 / 2장
+CC-2001-2 / 77 / 1장",5,108000,TEAMS_WEBHOOK_URL is empty.
