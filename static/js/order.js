@@ -91,9 +91,43 @@ function getQty(productCode, size) {
   return Number(cart?.[productCode]?.[size] || 0);
 }
 
+function parseQty(value) {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue || rawValue.startsWith("-")) {
+    return 0;
+  }
+
+  const integerPart = rawValue.split(/[.．]/)[0];
+  const digits = integerPart.replace(/\D/g, "");
+  if (!digits) {
+    return 0;
+  }
+
+  const qty = Number.parseInt(digits, 10);
+  return Number.isFinite(qty) ? qty : 0;
+}
+
+function cleanQtyInputValue(value, allowBlank = false) {
+  const rawValue = String(value ?? "").trim();
+  if (allowBlank && rawValue === "") {
+    return "";
+  }
+  if (rawValue.startsWith("-")) {
+    return "0";
+  }
+
+  const integerPart = rawValue.split(/[.．]/)[0];
+  const digits = integerPart.replace(/\D/g, "");
+  if (allowBlank && digits === "") {
+    return "";
+  }
+
+  return String(parseQty(digits));
+}
+
 function setQty(productCode, size, qty) {
   ensureCartProduct(productCode);
-  const nextQty = Math.max(0, qty);
+  const nextQty = parseQty(qty);
   if (nextQty === 0) {
     delete cart[productCode][size];
     if (Object.keys(cart[productCode]).length === 0) {
@@ -112,7 +146,7 @@ function getQuantityPanel(productCode) {
   return document.querySelector(`[data-quantity-panel][data-product-code="${cssEscape(productCode)}"]`);
 }
 
-function updateProductPanel(productCode) {
+function updateProductPanel(productCode, skipInput = null) {
   const panel = getQuantityPanel(productCode);
   if (!panel) {
     return;
@@ -121,20 +155,23 @@ function updateProductPanel(productCode) {
   const activeSize = panel.dataset.activeSize;
   const unitPrice = Number(panel.dataset.price || 0);
   const qty = getQty(productCode, activeSize);
+  const qtyInput = panel.querySelector("[data-active-qty]");
 
-  panel.querySelector("[data-active-qty]").textContent = String(qty);
+  if (qtyInput && qtyInput !== skipInput) {
+    qtyInput.value = String(qty);
+  }
   panel.querySelector("[data-line-total]").textContent = formatCurrency(unitPrice * qty);
 }
 
-function updateAllProductPanels() {
+function updateAllProductPanels(skipInput = null) {
   document.querySelectorAll("[data-quantity-panel]").forEach((panel) => {
-    updateProductPanel(panel.dataset.productCode);
+    updateProductPanel(panel.dataset.productCode, skipInput);
   });
 }
 
-function refreshOrderViews() {
-  updateAllProductPanels();
-  renderSummary();
+function refreshOrderViews({ skipInput = null, skipMiniOrderRender = false } = {}) {
+  updateAllProductPanels(skipInput);
+  renderSummary({ skipMiniOrderRender });
   if (!confirmModal.classList.contains("is-hidden")) {
     buildModal();
     updateConfirmSubmitState();
@@ -176,13 +213,13 @@ function getTotals() {
   };
 }
 
-function renderSummary() {
+function renderSummary({ skipMiniOrderRender = false } = {}) {
   const { totalQty, totalAmount } = getTotals();
   const progress = Math.min(100, Math.round((totalAmount / freeShippingThreshold) * 100));
 
   totalAmountLabel.textContent = formatCurrency(totalAmount);
   floatingTotalLabel.textContent = formatCurrency(totalAmount);
-  selectedCountLabel.textContent = `선택 상품 ${totalQty}개`;
+  selectedCountLabel.textContent = `주문내역 ${totalQty}개`;
   shippingProgressBar.style.width = `${progress}%`;
 
   if (totalAmount >= freeShippingThreshold) {
@@ -193,7 +230,7 @@ function renderSummary() {
 
   openConfirmButton.disabled = isSubmittingOrder || totalQty === 0 || !getCustomerName();
 
-  if (!miniOrderSheet.classList.contains("is-hidden")) {
+  if (!skipMiniOrderRender && !miniOrderSheet.classList.contains("is-hidden")) {
     renderMiniOrderSheet();
   }
 }
@@ -228,8 +265,47 @@ function handleQtyClick(button) {
   const nextQty = button.dataset.action === "increase" ? currentQty + 1 : currentQty - 1;
 
   setQty(productCode, activeSize, nextQty);
-  updateProductPanel(productCode);
+  refreshOrderViews();
+}
+
+function handleQtyInput(input) {
+  if (!getCustomerName()) {
+    customerInput.focus();
+    return;
+  }
+
+  const panel = input.closest("[data-quantity-panel]");
+  if (!panel) {
+    return;
+  }
+
+  const productCode = panel.dataset.productCode;
+  const activeSize = panel.dataset.activeSize;
+  const cleanedValue = cleanQtyInputValue(input.value, true);
+  const qty = parseQty(cleanedValue);
+
+  input.value = cleanedValue;
+  setQty(productCode, activeSize, qty);
+  updateProductPanel(productCode, input);
   renderSummary();
+  if (!confirmModal.classList.contains("is-hidden")) {
+    buildModal();
+    updateConfirmSubmitState();
+  }
+}
+
+function commitQtyInput(input) {
+  const panel = input.closest("[data-quantity-panel]");
+  if (!panel) {
+    return;
+  }
+
+  const productCode = panel.dataset.productCode;
+  const activeSize = panel.dataset.activeSize;
+  const qty = parseQty(input.value);
+  setQty(productCode, activeSize, qty);
+  input.value = String(getQty(productCode, activeSize));
+  refreshOrderViews({ skipInput: input });
 }
 
 function filterCategory(category) {
@@ -305,6 +381,7 @@ function renderMiniOrderSheet() {
     title.textContent = item.product_name;
 
     const detail = document.createElement("span");
+    detail.className = "mini-order-detail";
     detail.textContent = `${item.product_code} / ${item.size} / ${item.qty}장`;
     info.append(title, detail);
 
@@ -317,9 +394,16 @@ function renderMiniOrderSheet() {
     minusButton.dataset.miniAction = "decrease";
     minusButton.textContent = "-";
 
-    const qtyValue = document.createElement("strong");
-    qtyValue.className = "mini-qty-value";
-    qtyValue.textContent = String(item.qty);
+    const qtyInput = document.createElement("input");
+    qtyInput.type = "text";
+    qtyInput.inputMode = "numeric";
+    qtyInput.pattern = "[0-9]*";
+    qtyInput.autocomplete = "off";
+    qtyInput.className = "mini-qty-input";
+    qtyInput.dataset.miniQtyInput = "";
+    qtyInput.value = String(item.qty);
+    qtyInput.setAttribute("aria-label", `${item.product_name} ${item.size} 수량 직접 입력`);
+    qtyInput.title = `${item.product_name} ${item.size} 수량 직접 입력`;
 
     const plusButton = document.createElement("button");
     plusButton.type = "button";
@@ -333,7 +417,7 @@ function renderMiniOrderSheet() {
     deleteButton.dataset.miniAction = "delete";
     deleteButton.textContent = "삭제";
 
-    controls.append(minusButton, qtyValue, plusButton, deleteButton);
+    controls.append(minusButton, qtyInput, plusButton, deleteButton);
     row.append(info, controls);
     miniOrderItems.appendChild(row);
   });
@@ -407,6 +491,54 @@ function handleMiniOrderAction(button) {
   }
 
   refreshOrderViews();
+}
+
+function handleMiniQtyInput(input) {
+  const row = input.closest(".mini-order-item");
+  if (!row) {
+    return;
+  }
+
+  const productCode = row.dataset.productCode;
+  const size = row.dataset.size;
+  const cleanedValue = cleanQtyInputValue(input.value, true);
+  const qty = parseQty(cleanedValue);
+
+  input.value = cleanedValue;
+  setQty(productCode, size, qty);
+
+  const detail = row.querySelector(".mini-order-detail");
+  if (detail) {
+    detail.textContent = `${productCode} / ${size} / ${qty}장`;
+  }
+
+  updateAllProductPanels();
+  renderSummary({ skipMiniOrderRender: true });
+  if (!confirmModal.classList.contains("is-hidden")) {
+    buildModal();
+    updateConfirmSubmitState();
+  }
+}
+
+function commitMiniQtyInput(input) {
+  const row = input.closest(".mini-order-item");
+  if (!row) {
+    return;
+  }
+
+  const productCode = row.dataset.productCode;
+  const size = row.dataset.size;
+  const qty = parseQty(input.value);
+  setQty(productCode, size, qty);
+
+  if (qty === 0) {
+    refreshOrderViews();
+    return;
+  }
+
+  input.value = String(getQty(productCode, size));
+  updateAllProductPanels();
+  renderSummary({ skipMiniOrderRender: true });
 }
 
 function resetCustomer() {
@@ -569,6 +701,27 @@ orderSection.addEventListener("click", (event) => {
   }
 });
 
+orderSection.addEventListener("input", (event) => {
+  const qtyInput = event.target.closest("[data-active-qty]");
+  if (qtyInput) {
+    handleQtyInput(qtyInput);
+  }
+});
+
+orderSection.addEventListener("keydown", (event) => {
+  const qtyInput = event.target.closest("[data-active-qty]");
+  if (qtyInput && event.key === "Enter") {
+    qtyInput.blur();
+  }
+});
+
+orderSection.addEventListener("focusout", (event) => {
+  const qtyInput = event.target.closest("[data-active-qty]");
+  if (qtyInput) {
+    commitQtyInput(qtyInput);
+  }
+});
+
 openConfirmButton.addEventListener("click", () => {
   buildModal();
   updateConfirmSubmitState();
@@ -586,6 +739,27 @@ miniOrderSheet.addEventListener("click", (event) => {
 
   if (event.target.closest("[data-sheet-close]")) {
     closeSheet(miniOrderSheet);
+  }
+});
+
+miniOrderSheet.addEventListener("input", (event) => {
+  const qtyInput = event.target.closest("[data-mini-qty-input]");
+  if (qtyInput) {
+    handleMiniQtyInput(qtyInput);
+  }
+});
+
+miniOrderSheet.addEventListener("keydown", (event) => {
+  const qtyInput = event.target.closest("[data-mini-qty-input]");
+  if (qtyInput && event.key === "Enter") {
+    qtyInput.blur();
+  }
+});
+
+miniOrderSheet.addEventListener("focusout", (event) => {
+  const qtyInput = event.target.closest("[data-mini-qty-input]");
+  if (qtyInput) {
+    commitMiniQtyInput(qtyInput);
   }
 });
 

@@ -88,6 +88,86 @@
 
       <section class="card admin-table-card">
         <div class="table-header">
+          <h2>업로드된 이미지 관리</h2>
+          <div class="image-bulk-actions">
+            <span>{{ product_images|length }}개</span>
+            <form id="bulk-delete-images-form" method="post" action="{{ url_for('delete_images') }}">
+              <button id="bulk-delete-images-button" class="button danger-button image-delete-button" type="submit" disabled>
+                선택 삭제
+              </button>
+            </form>
+          </div>
+        </div>
+        <div class="table-wrap image-table-scroll">
+          <table class="image-admin-table">
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    id="select-all-images"
+                    class="image-select-checkbox"
+                    type="checkbox"
+                    aria-label="삭제 가능한 이미지 전체 선택"
+                  >
+                </th>
+                <th>이미지</th>
+                <th>파일명</th>
+                <th>용량</th>
+                <th>수정일</th>
+                <th>관리</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for image in product_images %}
+                <tr>
+                  <td>
+                    <input
+                      class="image-select-checkbox"
+                      type="checkbox"
+                      value="{{ image.filename }}"
+                      data-image-checkbox
+                      aria-label="{{ image.filename }} 선택"
+                      {% if not image.can_delete %}disabled{% endif %}
+                    >
+                  </td>
+                  <td>
+                    <img class="admin-image-thumb" src="{{ image.url }}" alt="{{ image.filename }}">
+                  </td>
+                  <td>
+                    <strong class="image-file-name">{{ image.filename }}</strong>
+                    {% if image.is_placeholder %}
+                      <span class="image-lock-badge">기본 이미지 / 삭제 불가</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ image.size_kb }} KB</td>
+                  <td>{{ image.modified_at }}</td>
+                  <td>
+                    {% if image.can_delete %}
+                      <form
+                        method="post"
+                        action="{{ url_for('delete_image') }}"
+                        onsubmit="return confirm('이 이미지를 삭제할까요?');"
+                      >
+                        <input type="hidden" name="filename" value="{{ image.filename }}">
+                        <button class="button danger-button image-delete-button" type="submit">삭제</button>
+                      </form>
+                    {% else %}
+                      <span class="image-muted-action">삭제 불가</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="6" class="empty-cell">업로드된 이미지가 없습니다.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card admin-table-card">
+        <div class="table-header">
           <h2>상품 목록 미리보기</h2>
           <span>{{ products|length }}개</span>
         </div>
@@ -227,5 +307,70 @@
       </section>
     {% endif %}
   </main>
+  {% if authenticated %}
+    <script>
+      const selectAllImages = document.getElementById("select-all-images");
+      const imageCheckboxes = Array.from(document.querySelectorAll("[data-image-checkbox]"));
+      const bulkDeleteImagesForm = document.getElementById("bulk-delete-images-form");
+      const bulkDeleteImagesButton = document.getElementById("bulk-delete-images-button");
+
+      function getSelectedImageCheckboxes() {
+        return imageCheckboxes.filter((checkbox) => checkbox.checked && !checkbox.disabled);
+      }
+
+      function updateBulkDeleteState() {
+        const selectableCheckboxes = imageCheckboxes.filter((checkbox) => !checkbox.disabled);
+        const selectedCount = getSelectedImageCheckboxes().length;
+
+        if (bulkDeleteImagesButton) {
+          bulkDeleteImagesButton.disabled = selectedCount === 0;
+          bulkDeleteImagesButton.textContent = selectedCount > 0 ? `선택 삭제 (${selectedCount})` : "선택 삭제";
+        }
+
+        if (selectAllImages) {
+          selectAllImages.disabled = selectableCheckboxes.length === 0;
+          selectAllImages.checked = selectableCheckboxes.length > 0 && selectedCount === selectableCheckboxes.length;
+          selectAllImages.indeterminate = selectedCount > 0 && selectedCount < selectableCheckboxes.length;
+        }
+      }
+
+      selectAllImages?.addEventListener("change", () => {
+        imageCheckboxes.forEach((checkbox) => {
+          if (!checkbox.disabled) {
+            checkbox.checked = selectAllImages.checked;
+          }
+        });
+        updateBulkDeleteState();
+      });
+
+      imageCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", updateBulkDeleteState);
+      });
+
+      bulkDeleteImagesForm?.addEventListener("submit", (event) => {
+        const selectedCheckboxes = getSelectedImageCheckboxes();
+        if (selectedCheckboxes.length === 0) {
+          event.preventDefault();
+          return;
+        }
+
+        if (!confirm(`선택한 이미지 ${selectedCheckboxes.length}개를 삭제할까요?`)) {
+          event.preventDefault();
+          return;
+        }
+
+        bulkDeleteImagesForm.querySelectorAll('input[name="filenames"]').forEach((input) => input.remove());
+        selectedCheckboxes.forEach((checkbox) => {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "filenames";
+          input.value = checkbox.value;
+          bulkDeleteImagesForm.appendChild(input);
+        });
+      });
+
+      updateBulkDeleteState();
+    </script>
+  {% endif %}
 </body>
 </html>

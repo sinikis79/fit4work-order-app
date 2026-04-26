@@ -10,7 +10,10 @@
   <main class="mobile-frame">
     <header class="order-header">
       <div class="header-title-row">
-        <h1>간편 주문하기</h1>
+        <div>
+          <span class="brand-chip">Fit4Work</span>
+          <h1>간편 주문하기</h1>
+        </div>
         <button id="change-customer-button" class="change-customer-button" type="button">거래처 다시 입력</button>
       </div>
       <div class="header-meta">
@@ -88,7 +91,17 @@
             >
               <button type="button" class="qty-button qty-minus" data-action="decrease" aria-label="{{ product.product_name }} 수량 감소">-</button>
               <div class="qty-center">
-                <strong data-active-qty>0</strong>
+                <input
+                  class="qty-input"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  autocomplete="off"
+                  value="0"
+                  data-active-qty
+                  aria-label="{{ product.product_name }} 수량 직접 입력"
+                  title="{{ product.product_name }} 수량 직접 입력"
+                >
                 <span data-line-total>0원</span>
               </div>
               <button type="button" class="qty-button qty-plus" data-action="increase" aria-label="{{ product.product_name }} 수량 증가">+</button>
@@ -106,10 +119,9 @@
 
   <section class="bottom-order-bar">
     <button id="open-mini-order-button" class="bottom-left" type="button">
-      <span class="bottom-cart-icon" aria-hidden="true"></span>
+      <span class="bottom-cart-icon" aria-hidden="true">🛒</span>
       <span class="bottom-cart-copy">
-        <span>주문내역</span>
-        <strong id="selected-count-label">선택 상품 0개</strong>
+        <strong id="selected-count-label">주문내역 0개</strong>
       </span>
     </button>
     <button id="open-confirm-button" class="order-button" type="button" disabled>

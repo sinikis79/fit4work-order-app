@@ -1,6 +1,7 @@
 .env
 .venv/
 backups/
+static/product_images/dev-scroll-test-*.webp
 __pycache__/
 *.py[cod]
 *.lock

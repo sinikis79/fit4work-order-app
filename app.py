@@ -299,6 +299,54 @@ def load_products_for_admin() -> list[dict]:
     return items
 
 
+def load_product_images_for_admin() -> list[dict]:
+    if not IMAGE_DIR.exists():
+        return []
+
+    images = []
+    for image_path in IMAGE_DIR.iterdir():
+        if not image_path.is_file() or image_path.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS:
+            continue
+
+        stat = image_path.stat()
+        filename = image_path.name
+        images.append(
+            {
+                "filename": filename,
+                "url": url_for("static", filename=f"product_images/{filename}"),
+                "size_kb": f"{stat.st_size / 1024:.1f}",
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                "is_placeholder": filename == PLACEHOLDER_FILE.name,
+                "can_delete": filename != PLACEHOLDER_FILE.name,
+            }
+        )
+
+    images.sort(key=lambda item: (not item["is_placeholder"], item["filename"].lower()))
+    return images
+
+
+def get_safe_product_image_path(filename: str) -> tuple[Path | None, str]:
+    safe_filename = secure_filename(safe_text(filename))
+    if not safe_filename or safe_filename != filename:
+        return None, "파일명이 올바르지 않습니다."
+    if Path(safe_filename).name != safe_filename:
+        return None, "파일명이 올바르지 않습니다."
+    if safe_filename == PLACEHOLDER_FILE.name:
+        return None, "placeholder.webp는 기본 이미지라 삭제할 수 없습니다."
+    if Path(safe_filename).suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS:
+        return None, "허용되지 않는 이미지 확장자입니다."
+
+    image_dir = IMAGE_DIR.resolve()
+    target_path = IMAGE_DIR / safe_filename
+    resolved_target = target_path.resolve(strict=False)
+    if resolved_target.parent != image_dir:
+        return None, "삭제할 수 없는 경로입니다."
+    if not target_path.is_file():
+        return None, "삭제할 이미지를 찾을 수 없습니다."
+
+    return target_path, ""
+
+
 def read_csv_rows(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -660,13 +708,22 @@ def admin_page():
         flash("비밀번호가 올바르지 않습니다.", "error")
 
     if not is_admin_authenticated():
-        return render_template("admin.html", authenticated=False, products=[], orders=[], failed_orders=[], stats={})
+        return render_template(
+            "admin.html",
+            authenticated=False,
+            products=[],
+            product_images=[],
+            orders=[],
+            failed_orders=[],
+            stats={},
+        )
 
     orders = read_csv_rows(ORDERS_LOG_FILE)[:100]
     failed_orders = read_csv_rows(FAILED_ORDERS_FILE)[:100]
     for failed_order in failed_orders:
         failed_order["teams_status"] = "TEAMS_FAIL"
     products = load_products_for_admin()
+    product_images = load_product_images_for_admin()
     stats = {
         "product_count": len(products),
         "order_count": len(read_csv_rows(ORDERS_LOG_FILE)),
@@ -677,6 +734,7 @@ def admin_page():
         "admin.html",
         authenticated=True,
         products=products,
+        product_images=product_images,
         orders=orders,
         failed_orders=failed_orders,
         stats=stats,
@@ -722,6 +780,58 @@ def upload_images():
         flash(f"이미지 {len(saved_files)}건 업로드 완료: {', '.join(saved_files)}", "success")
     if errors:
         flash(" / ".join(errors), "error")
+    return redirect(url_for("admin_page"))
+
+
+@app.post("/admin/delete-image")
+def delete_image():
+    if not is_admin_authenticated():
+        return redirect(url_for("admin_page"))
+
+    filename = safe_text(request.form.get("filename"))
+    target_path, error_message = get_safe_product_image_path(filename)
+    if error_message:
+        flash(error_message, "error")
+        return redirect(url_for("admin_page"))
+
+    try:
+        target_path.unlink()
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to delete product image: %s", filename)
+        flash("이미지 삭제 중 오류가 발생했습니다.", "error")
+        return redirect(url_for("admin_page"))
+
+    flash(f"이미지를 삭제했습니다: {filename}", "success")
+    return redirect(url_for("admin_page"))
+
+
+@app.post("/admin/delete-images")
+def delete_images():
+    if not is_admin_authenticated():
+        return redirect(url_for("admin_page"))
+
+    filenames = [safe_text(filename) for filename in request.form.getlist("filenames") if safe_text(filename)]
+    if not filenames:
+        flash("삭제할 이미지를 선택해주세요.", "error")
+        return redirect(url_for("admin_page"))
+
+    success_count = 0
+    fail_count = 0
+    for filename in dict.fromkeys(filenames):
+        target_path, error_message = get_safe_product_image_path(filename)
+        if error_message:
+            fail_count += 1
+            continue
+
+        try:
+            target_path.unlink()
+            success_count += 1
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to delete product image: %s", filename)
+            fail_count += 1
+
+    category = "success" if fail_count == 0 else "error"
+    flash(f"선택 이미지 삭제 결과: 성공 {success_count}건, 실패 {fail_count}건", category)
     return redirect(url_for("admin_page"))
 
 
