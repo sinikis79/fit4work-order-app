@@ -11,6 +11,7 @@ from threading import Lock
 import openpyxl
 import requests
 from dotenv import load_dotenv
+from filelock import FileLock
 from flask import (
     Flask,
     flash,
@@ -38,6 +39,8 @@ IMAGE_BACKUP_DIR = BACKUP_DIR / "images"
 PRODUCTS_FILE = BASE_DIR / "products.xlsx"
 ORDERS_LOG_FILE = BASE_DIR / "orders_log.csv"
 FAILED_ORDERS_FILE = BASE_DIR / "failed_orders.csv"
+ORDERS_LOG_LOCK_FILE = BASE_DIR / "orders_log.csv.lock"
+FAILED_ORDERS_LOCK_FILE = BASE_DIR / "failed_orders.csv.lock"
 PLACEHOLDER_FILE = IMAGE_DIR / "placeholder.webp"
 
 PRODUCT_HEADERS = ["품목코드", "상품명", "설명", "카테고리", "도매가", "사이즈", "이미지파일", "노출", "정렬순서"]
@@ -49,6 +52,7 @@ ORDER_HEADERS = [
     "items",
     "total_qty",
     "total_amount",
+    "memo",
     "teams_status",
     "email_alert_status",
 ]
@@ -59,6 +63,7 @@ FAILED_ORDER_HEADERS = [
     "items",
     "total_qty",
     "total_amount",
+    "memo",
     "error_message",
 ]
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -69,6 +74,8 @@ DEFAULT_PORT = int(os.getenv("APP_PORT", "5001"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fit4work-order-app")
 ORDER_LOCK = Lock()
+ORDERS_LOG_FILE_LOCK = FileLock(str(ORDERS_LOG_LOCK_FILE))
+FAILED_ORDERS_FILE_LOCK = FileLock(str(FAILED_ORDERS_LOCK_FILE))
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "change_this_secret")
@@ -81,12 +88,29 @@ def ensure_directories() -> None:
 
 
 def ensure_csv(path: Path, headers: list[str]) -> None:
-    if path.exists():
+    if not path.exists():
+        with path.open("w", newline="", encoding="utf-8-sig") as file:
+            writer = csv.writer(file)
+            writer.writerow(headers)
         return
 
+    with path.open("r", newline="", encoding="utf-8-sig") as file:
+        reader = csv.reader(file)
+        try:
+            existing_headers = next(reader)
+        except StopIteration:
+            existing_headers = []
+
+    if existing_headers == headers:
+        return
+
+    rows = read_csv_rows(path) if existing_headers else []
+    rows.reverse()
+    normalized_rows = [normalize_csv_row(row, headers) for row in rows]
     with path.open("w", newline="", encoding="utf-8-sig") as file:
-        writer = csv.writer(file)
-        writer.writerow(headers)
+        writer = csv.DictWriter(file, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(normalized_rows)
 
 
 def create_sample_products_xlsx() -> None:
@@ -268,30 +292,37 @@ def read_csv_rows(path: Path) -> list[dict]:
     return rows
 
 
+def normalize_csv_row(row: dict, headers: list[str]) -> dict:
+    return {header: row.get(header, "") for header in headers}
+
+
 def write_csv_rows(path: Path, headers: list[str], rows: list[dict]) -> None:
+    normalized_rows = [normalize_csv_row(row, headers) for row in rows]
     with path.open("w", newline="", encoding="utf-8-sig") as file:
         writer = csv.DictWriter(file, fieldnames=headers)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(normalized_rows)
 
 
 def append_csv_row(path: Path, headers: list[str], row: dict) -> None:
     ensure_csv(path, headers)
+    normalized_row = normalize_csv_row(row, headers)
     with path.open("a", newline="", encoding="utf-8-sig") as file:
         writer = csv.DictWriter(file, fieldnames=headers)
-        writer.writerow(row)
+        writer.writerow(normalized_row)
 
 
 def update_order_status(order_id: str, teams_status: str, email_status: str) -> None:
-    rows = read_csv_rows(ORDERS_LOG_FILE)
-    rows.reverse()
-    updated_rows = []
-    for row in rows:
-        if row.get("order_id") == order_id:
-            row["teams_status"] = teams_status
-            row["email_alert_status"] = email_status
-        updated_rows.append(row)
-    write_csv_rows(ORDERS_LOG_FILE, ORDER_HEADERS, updated_rows)
+    with ORDERS_LOG_FILE_LOCK:
+        rows = read_csv_rows(ORDERS_LOG_FILE)
+        rows.reverse()
+        updated_rows = []
+        for row in rows:
+            if row.get("order_id") == order_id:
+                row["teams_status"] = teams_status
+                row["email_alert_status"] = email_status
+            updated_rows.append(row)
+        write_csv_rows(ORDERS_LOG_FILE, ORDER_HEADERS, updated_rows)
 
 
 def generate_order_id() -> str:
@@ -317,19 +348,20 @@ def build_items_text(items: list[dict]) -> str:
 
 
 def build_teams_payload(order: dict) -> dict:
-    text = "\n".join(
-        [
-            "[신규 주문 접수]",
-            "",
-            f"거래처: {order['customer_name']}",
-            f"주문번호: {order['order_id']}",
-            "",
-            order["items"],
-            "",
-            f"총수량: {order['total_qty']}장",
-            f"총 참고금액: {format_currency(parse_int(order['total_amount']))}",
-        ]
-    )
+    lines = [
+        "[신규 주문 접수]",
+        "",
+        f"거래처: {order['customer_name']}",
+        f"주문번호: {order['order_id']}",
+        "",
+        order["items"],
+        "",
+        f"총수량: {order['total_qty']}장",
+        f"총 참고금액: {format_currency(parse_int(order['total_amount']))}",
+    ]
+    if order.get("memo"):
+        lines.extend(["", f"요청사항: {order['memo']}"])
+    text = "\n".join(lines)
     return {"text": text}
 
 
@@ -449,6 +481,7 @@ def save_uploaded_products(file_storage) -> tuple[bool, str]:
 
 def build_order_from_payload(payload: dict) -> tuple[dict | None, list[str]]:
     customer_name = safe_text(payload.get("customer_name"))
+    memo = safe_text(payload.get("memo"))
     items = payload.get("items")
     total_qty = parse_int(payload.get("total_qty"))
     total_amount = parse_int(payload.get("total_amount"))
@@ -512,6 +545,7 @@ def build_order_from_payload(payload: dict) -> tuple[dict | None, list[str]]:
         "items": build_items_text(normalized_items),
         "total_qty": str(computed_total_qty),
         "total_amount": str(computed_total_amount),
+        "memo": memo,
         "teams_status": "PENDING",
         "email_alert_status": "PENDING",
         "item_rows": normalized_items,
@@ -537,12 +571,13 @@ def submit_order():
     initialize_files()
     payload = request.get_json(silent=True) or {}
     with ORDER_LOCK:
-        order, errors = build_order_from_payload(payload)
-        if errors:
-            return jsonify({"ok": False, "errors": errors}), 400
+        with ORDERS_LOG_FILE_LOCK:
+            order, errors = build_order_from_payload(payload)
+            if errors:
+                return jsonify({"ok": False, "errors": errors}), 400
 
-        order_row = {key: order[key] for key in ORDER_HEADERS}
-        append_csv_row(ORDERS_LOG_FILE, ORDER_HEADERS, order_row)
+            order_row = {key: order[key] for key in ORDER_HEADERS}
+            append_csv_row(ORDERS_LOG_FILE, ORDER_HEADERS, order_row)
 
     teams_ok, teams_error = send_teams_webhook(order)
     if teams_ok:
@@ -557,9 +592,11 @@ def submit_order():
         "items": order["items"],
         "total_qty": order["total_qty"],
         "total_amount": order["total_amount"],
+        "memo": order["memo"],
         "error_message": teams_error,
     }
-    append_csv_row(FAILED_ORDERS_FILE, FAILED_ORDER_HEADERS, failed_row)
+    with FAILED_ORDERS_FILE_LOCK:
+        append_csv_row(FAILED_ORDERS_FILE, FAILED_ORDER_HEADERS, failed_row)
 
     email_ok, email_error = send_failure_email(order, teams_error)
     final_email_status = "EMAIL_SENT" if email_ok else "EMAIL_FAIL"

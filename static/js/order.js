@@ -16,6 +16,7 @@ const openMiniOrderButton = document.getElementById("open-mini-order-button");
 const openConfirmButton = document.getElementById("open-confirm-button");
 const confirmModal = document.getElementById("confirm-modal");
 const confirmCustomerInput = document.getElementById("confirm-customer-input");
+const confirmMemoInput = document.getElementById("confirm-memo-input");
 const modalItems = document.getElementById("modal-items");
 const modalTotalQty = document.getElementById("modal-total-qty");
 const modalTotalAmount = document.getElementById("modal-total-amount");
@@ -32,7 +33,9 @@ const miniTotalAmount = document.getElementById("mini-total-amount");
 
 const freeShippingThreshold = Number(document.body.dataset.freeShippingThreshold || 100000);
 const cart = {};
+let currentCustomerName = "";
 let isCustomerModalRequired = true;
+let isSubmittingOrder = false;
 
 function cssEscape(value) {
   if (window.CSS && typeof window.CSS.escape === "function") {
@@ -45,12 +48,21 @@ function formatCurrency(value) {
   return `${Number(value || 0).toLocaleString("ko-KR")}원`;
 }
 
+function clearStoredCustomerName() {
+  try {
+    localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+  } catch (_error) {
+    // Some browsers can block storage access; ordering should still work.
+  }
+}
+
 function getCustomerName() {
-  return localStorage.getItem(CUSTOMER_STORAGE_KEY)?.trim() || "";
+  return currentCustomerName.trim();
 }
 
 function setCustomerName(name) {
-  localStorage.setItem(CUSTOMER_STORAGE_KEY, name.trim());
+  currentCustomerName = name.trim();
+  clearStoredCustomerName();
 }
 
 function syncCustomerUI() {
@@ -179,7 +191,7 @@ function renderSummary() {
     shippingStatusLabel.textContent = `무료배송까지 ${formatCurrency(freeShippingThreshold - totalAmount)}`;
   }
 
-  openConfirmButton.disabled = totalQty === 0 || !getCustomerName();
+  openConfirmButton.disabled = isSubmittingOrder || totalQty === 0 || !getCustomerName();
 
   if (!miniOrderSheet.classList.contains("is-hidden")) {
     renderMiniOrderSheet();
@@ -242,6 +254,9 @@ function initializeCategoryTabs() {
 function buildModal() {
   const { items, totalQty, totalAmount } = getTotals();
   confirmCustomerInput.value = getCustomerName();
+  if (confirmMemoInput) {
+    confirmMemoInput.value = confirmMemoInput.value || "";
+  }
   modalTotalQty.textContent = `${totalQty}장`;
   modalTotalAmount.textContent = formatCurrency(totalAmount);
   modalItems.innerHTML = "";
@@ -336,6 +351,7 @@ function closeModal(modal) {
 
 function openCustomerModal(isRequired = false) {
   isCustomerModalRequired = isRequired;
+  customerInput.value = isRequired ? "" : getCustomerName();
   customerModal.classList.remove("is-hidden");
   customerModal.setAttribute("aria-hidden", "false");
   window.setTimeout(() => customerInput.focus(), 50);
@@ -394,21 +410,37 @@ function handleMiniOrderAction(button) {
 }
 
 function resetCustomer() {
-  localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+  setCustomerName("");
   customerNameDisplay.textContent = "입력 필요";
   customerInput.value = "";
   confirmCustomerInput.value = "";
+  resetMemoInput();
   orderSection.classList.add("is-locked");
   orderSection.setAttribute("aria-hidden", "true");
 }
 
+function getMemoValue() {
+  return confirmMemoInput?.value.trim() || "";
+}
+
+function resetMemoInput() {
+  if (confirmMemoInput) {
+    confirmMemoInput.value = "";
+  }
+}
+
 function updateConfirmSubmitState() {
-  submitConfirmButton.disabled = !confirmCustomerInput.value.trim();
+  submitConfirmButton.disabled = isSubmittingOrder || !confirmCustomerInput.value.trim();
 }
 
 async function submitOrder() {
+  if (isSubmittingOrder) {
+    return;
+  }
+
   const { items, totalQty, totalAmount } = getTotals();
   const customerName = confirmCustomerInput.value.trim();
+  const memo = getMemoValue();
 
   if (!customerName) {
     confirmCustomerInput.focus();
@@ -416,10 +448,19 @@ async function submitOrder() {
     return;
   }
 
+  if (items.length === 0 || totalQty <= 0) {
+    closeModal(confirmModal);
+    openSheet(miniOrderSheet);
+    renderSummary();
+    return;
+  }
+
   setCustomerName(customerName);
   customerNameDisplay.textContent = customerName;
 
-  submitConfirmButton.disabled = true;
+  isSubmittingOrder = true;
+  updateConfirmSubmitState();
+  renderSummary();
   submitConfirmButton.textContent = "전송 중...";
 
   try {
@@ -437,11 +478,27 @@ async function submitOrder() {
         })),
         total_qty: totalQty,
         total_amount: totalAmount,
+        memo,
       }),
     });
 
-    const result = await response.json();
+    const responseText = await response.text();
+    let result = {};
+    try {
+      result = responseText ? JSON.parse(responseText) : {};
+    } catch (_error) {
+      console.error("Order submit response is not JSON", {
+        status: response.status,
+        responseText,
+      });
+    }
+
     if (!response.ok || !result.ok) {
+      console.error("Order submit failed", {
+        status: response.status,
+        responseText,
+        result,
+      });
       const message = Array.isArray(result.errors) ? result.errors.join(" ") : "주문 전송에 실패했습니다.";
       alert(message);
       return;
@@ -452,11 +509,15 @@ async function submitOrder() {
     openModal(completeModal);
     resetCart();
     resetCustomer();
-  } catch (_error) {
+    resetMemoInput();
+  } catch (error) {
+    console.error("Order submit network error", error);
     alert("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
   } finally {
-    submitConfirmButton.disabled = false;
+    isSubmittingOrder = false;
     submitConfirmButton.textContent = "주문 확정";
+    updateConfirmSubmitState();
+    renderSummary();
   }
 }
 
@@ -532,7 +593,7 @@ customerModal.addEventListener("click", (event) => {
   if (!event.target.closest("[data-customer-modal-backdrop]")) {
     return;
   }
-  if (!isCustomerModalRequired && getCustomerName()) {
+  if (!isCustomerModalRequired) {
     closeCustomerModal();
   }
 });
@@ -544,13 +605,17 @@ confirmModal.addEventListener("click", (event) => {
 });
 
 confirmCustomerInput.addEventListener("input", updateConfirmSubmitState);
-closeConfirmButton.addEventListener("click", () => closeModal(confirmModal));
+closeConfirmButton.addEventListener("click", () => {
+  closeModal(confirmModal);
+  openSheet(miniOrderSheet);
+});
 submitConfirmButton.addEventListener("click", submitOrder);
 completeCloseButton.addEventListener("click", () => {
   closeModal(completeModal);
   syncCustomerUI();
 });
 
+clearStoredCustomerName();
 syncCustomerUI();
 initializeCategoryTabs();
 document.querySelectorAll("[data-quantity-panel]").forEach((panel) => {

@@ -4,13 +4,13 @@
   --ink: #151923;
   --muted: #747b88;
   --line: #e2e6ed;
-  --navy: #138b82;
-  --navy-soft: #2ec4b6;
+  --navy: #0f6f64;
+  --navy-soft: #16877a;
   --yellow: #fff1a8;
   --red: #e53935;
-  --red-deep: #0e756e;
-  --primary: #2ec4b6;
-  --primary-deep: #138b82;
+  --red-deep: #0f6f64;
+  --primary: #1f9d8f;
+  --primary-deep: #0f6f64;
   --primary-pale: #e8fbf8;
   --shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
   --card-radius: 16px;
@@ -58,14 +58,40 @@ button:disabled {
 
 .order-header {
   position: sticky;
+  isolation: isolate;
   top: 0;
   z-index: 30;
   min-height: 88px;
   margin: 0 -12px;
   padding: 12px 16px 10px;
+  overflow: hidden;
   color: #fff;
-  background: linear-gradient(180deg, var(--primary-deep) 0%, #16a79c 100%);
-  box-shadow: 0 8px 18px rgba(19, 139, 130, 0.22);
+  background:
+    linear-gradient(135deg, rgba(15, 111, 100, 0.96), rgba(31, 157, 143, 0.94)),
+    #0f6f64;
+  box-shadow: 0 10px 24px rgba(15, 111, 100, 0.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.order-header::after {
+  content: "Fit4Work";
+  position: absolute;
+  right: 10px;
+  bottom: -8px;
+  z-index: 0;
+  color: rgba(255, 255, 255, 0.08);
+  font-size: 3.15rem;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.order-header > * {
+  position: relative;
+  z-index: 2;
 }
 
 .header-title-row,
@@ -99,7 +125,7 @@ button:disabled {
   gap: 8px;
   margin-top: 8px;
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .header-meta strong {
@@ -114,24 +140,52 @@ button:disabled {
 .header-total-row span {
   display: block;
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .header-total-row strong {
   display: block;
-  margin-top: 1px;
+  margin-top: 2px;
   color: var(--yellow);
-  font-size: 1.25rem;
+  font-size: 1.55rem;
   font-weight: 900;
+  line-height: 1.05;
+  text-shadow: 0 2px 10px rgba(4, 38, 36, 0.18);
 }
 
 .shipping-copy {
-  max-width: 168px;
-  color: #fff1a8;
-  font-size: 0.82rem;
-  font-weight: 800;
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-height: 38px;
+  max-width: 210px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  color: #fff7c5;
+  background: rgba(7, 64, 58, 0.34);
+  font-size: 0.9rem;
+  font-weight: 900;
   text-align: right;
   line-height: 1.25;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 6px 14px rgba(5, 44, 40, 0.14);
+}
+
+.shipping-copy::before {
+  content: "FREE";
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--primary-deep);
+  background: rgba(255, 241, 168, 0.92);
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .progress-track {
@@ -470,8 +524,8 @@ button:disabled {
   place-items: center;
   border-radius: 15px;
   color: #fff;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
-  box-shadow: 0 8px 18px rgba(19, 139, 130, 0.24);
+  background: linear-gradient(135deg, #0f6f64 0%, #074b44 100%);
+  box-shadow: 0 8px 18px rgba(7, 75, 68, 0.3);
   font-weight: 900;
 }
 
@@ -708,27 +762,49 @@ button:disabled {
   box-shadow: 0 16px 42px rgba(0, 0, 0, 0.22);
 }
 
-.confirm-customer-field {
+.confirm-customer-field,
+.confirm-memo-field {
   display: grid;
   gap: 8px;
   margin-bottom: 14px;
 }
 
-.confirm-customer-field span {
+.confirm-customer-field span,
+.confirm-memo-field span {
   color: var(--muted);
   font-size: 0.88rem;
   font-weight: 900;
 }
 
-.confirm-customer-field input {
+.confirm-customer-field input,
+.confirm-memo-field textarea {
   width: 100%;
-  min-height: 48px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 0 13px;
   color: var(--ink);
   background: #fff;
   font-weight: 800;
+}
+
+.confirm-customer-field input {
+  min-height: 48px;
+  padding: 0 13px;
+}
+
+.confirm-memo-field {
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid #dfe5ee;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.confirm-memo-field textarea {
+  min-height: 86px;
+  padding: 12px 13px;
+  resize: vertical;
+  line-height: 1.45;
+  background: #fff;
 }
 
 .modal-panel h2 {
