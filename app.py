@@ -36,6 +36,7 @@ JS_DIR = STATIC_DIR / "js"
 IMAGE_DIR = STATIC_DIR / "product_images"
 BACKUP_DIR = BASE_DIR / "backups"
 IMAGE_BACKUP_DIR = BACKUP_DIR / "images"
+ORDER_BACKUP_DIR = BACKUP_DIR / "orders"
 PRODUCTS_FILE = BASE_DIR / "products.xlsx"
 ORDERS_LOG_FILE = BASE_DIR / "orders_log.csv"
 FAILED_ORDERS_FILE = BASE_DIR / "failed_orders.csv"
@@ -83,7 +84,7 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 
 def ensure_directories() -> None:
-    for path in [TEMPLATES_DIR, STATIC_DIR, CSS_DIR, JS_DIR, IMAGE_DIR, BACKUP_DIR, IMAGE_BACKUP_DIR]:
+    for path in [TEMPLATES_DIR, STATIC_DIR, CSS_DIR, JS_DIR, IMAGE_DIR, BACKUP_DIR, IMAGE_BACKUP_DIR, ORDER_BACKUP_DIR]:
         path.mkdir(parents=True, exist_ok=True)
 
 
@@ -148,8 +149,25 @@ def initialize_files() -> None:
     ensure_directories()
     ensure_csv(ORDERS_LOG_FILE, ORDER_HEADERS)
     ensure_csv(FAILED_ORDERS_FILE, FAILED_ORDER_HEADERS)
+    backup_csv_files()
     create_sample_products_xlsx()
     create_placeholder_image()
+
+
+def backup_csv_file(source: Path, prefix: str) -> None:
+    if not source.exists():
+        return
+
+    backup_path = ORDER_BACKUP_DIR / f"{prefix}_{datetime.now():%Y%m%d}.csv"
+    if backup_path.exists():
+        return
+
+    shutil.copy2(source, backup_path)
+
+
+def backup_csv_files() -> None:
+    backup_csv_file(ORDERS_LOG_FILE, "orders_log")
+    backup_csv_file(FAILED_ORDERS_FILE, "failed_orders")
 
 
 def safe_text(value) -> str:
@@ -304,6 +322,10 @@ def write_csv_rows(path: Path, headers: list[str], rows: list[dict]) -> None:
         writer.writerows(normalized_rows)
 
 
+def clear_csv_rows(path: Path, headers: list[str]) -> None:
+    write_csv_rows(path, headers, [])
+
+
 def append_csv_row(path: Path, headers: list[str], row: dict) -> None:
     ensure_csv(path, headers)
     normalized_row = normalize_csv_row(row, headers)
@@ -393,26 +415,29 @@ def send_failure_email(order: dict, error_message: str) -> tuple[bool, str]:
     message["Subject"] = "[Fit4Work] Teams 전송 실패 - 주문 확인 필요"
     message["From"] = username
     message["To"] = recipient
-    message.set_content(
-        "\n".join(
-            [
-                "Teams 전송에 실패한 주문이 있습니다.",
-                "",
-                f"주문번호: {order['order_id']}",
-                f"거래처: {order['customer_name']}",
-                "",
-                "주문 내역:",
-                order["items"],
-                "",
-                f"총수량: {order['total_qty']}장",
-                f"총 참고금액: {format_currency(parse_int(order['total_amount']))}",
-                "",
-                f"오류 내용: {error_message}",
-                "",
-                "failed_orders.csv와 서버 로그를 확인해주세요.",
-            ]
-        )
+    lines = [
+        "Teams 전송에 실패한 주문이 있습니다.",
+        "",
+        f"주문번호: {order['order_id']}",
+        f"거래처: {order['customer_name']}",
+        "",
+        "주문 내역:",
+        order["items"],
+        "",
+        f"총수량: {order['total_qty']}장",
+        f"총 참고금액: {format_currency(parse_int(order['total_amount']))}",
+    ]
+    if order.get("memo"):
+        lines.extend(["", f"요청사항: {order['memo']}"])
+    lines.extend(
+        [
+            "",
+            f"오류 내용: {error_message}",
+            "",
+            "failed_orders.csv와 서버 로그를 확인해주세요.",
+        ]
     )
+    message.set_content("\n".join(lines))
 
     try:
         with smtplib.SMTP(host, port, timeout=10) as server:
@@ -623,11 +648,14 @@ def admin_page():
     initialize_files()
 
     if request.method == "POST" and not is_admin_authenticated():
-        admin_password = safe_text(os.getenv("ADMIN_PASSWORD", "change_me"))
+        admin_password = safe_text(os.getenv("ADMIN_PASSWORD"))
         submitted_password = safe_text(request.form.get("password"))
-        if submitted_password == admin_password:
+        if admin_password and submitted_password == admin_password:
             session["admin_authenticated"] = True
             flash("관리자 로그인에 성공했습니다.", "success")
+            return redirect(url_for("admin_page"))
+        if not admin_password:
+            flash("ADMIN_PASSWORD 환경변수를 설정해주세요.", "error")
             return redirect(url_for("admin_page"))
         flash("비밀번호가 올바르지 않습니다.", "error")
 
@@ -694,6 +722,28 @@ def upload_images():
         flash(f"이미지 {len(saved_files)}건 업로드 완료: {', '.join(saved_files)}", "success")
     if errors:
         flash(" / ".join(errors), "error")
+    return redirect(url_for("admin_page"))
+
+
+@app.post("/admin/clear-failed-orders")
+def clear_failed_orders():
+    if not is_admin_authenticated():
+        return redirect(url_for("admin_page"))
+
+    with FAILED_ORDERS_FILE_LOCK:
+        clear_csv_rows(FAILED_ORDERS_FILE, FAILED_ORDER_HEADERS)
+    flash("실패 주문 로그를 초기화했습니다.", "success")
+    return redirect(url_for("admin_page"))
+
+
+@app.post("/admin/clear-orders")
+def clear_orders():
+    if not is_admin_authenticated():
+        return redirect(url_for("admin_page"))
+
+    with ORDERS_LOG_FILE_LOCK:
+        clear_csv_rows(ORDERS_LOG_FILE, ORDER_HEADERS)
+    flash("전체 주문 로그를 초기화했습니다.", "success")
     return redirect(url_for("admin_page"))
 
 

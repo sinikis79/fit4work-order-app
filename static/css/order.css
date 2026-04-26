@@ -23,6 +23,7 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 16px;
 }
 
 body {
@@ -160,8 +161,9 @@ button:disabled {
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
+  flex: 0 0 auto;
   min-height: 38px;
-  max-width: 210px;
+  max-width: none;
   padding: 9px 12px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
@@ -171,6 +173,7 @@ button:disabled {
   font-weight: 900;
   text-align: right;
   line-height: 1.25;
+  white-space: nowrap;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     0 6px 14px rgba(5, 44, 40, 0.14);
@@ -935,6 +938,7 @@ button:disabled {
 .admin-login,
 .admin-grid,
 .admin-table-card,
+.admin-danger-zone,
 .stat-card {
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -946,6 +950,7 @@ button:disabled {
 .admin-login,
 .admin-grid,
 .admin-table-card,
+.admin-danger-zone,
 .stat-card {
   padding: 18px;
 }
@@ -953,7 +958,8 @@ button:disabled {
 .admin-header h1,
 .admin-table-card h2,
 .admin-grid h2,
-.admin-login h2 {
+.admin-login h2,
+.admin-danger-zone h2 {
   margin: 0 0 10px;
 }
 
@@ -1030,9 +1036,68 @@ input[type="file"] {
   font-size: 1.35rem;
 }
 
+.stat-card-danger {
+  border-color: #f4b7b7;
+  background: #fff7f7;
+}
+
+.stat-card-danger div,
+.stat-card-danger strong {
+  color: #b42332;
+}
+
+.admin-alert {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+}
+
+.admin-alert strong {
+  font-size: 1.1rem;
+}
+
+.admin-alert span {
+  font-size: 0.9rem;
+}
+
+.admin-alert-danger {
+  color: #981b1e;
+  border: 1px solid #f2aaaa;
+  background: #fff1f1;
+}
+
 .admin-grid {
   display: grid;
   gap: 18px;
+}
+
+.admin-danger-zone {
+  display: grid;
+  gap: 14px;
+  border-color: #f4b7b7;
+  background: #fffafa;
+}
+
+.danger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.danger-button {
+  color: #981b1e;
+  border: 1px solid #f2aaaa;
+  background: #fff1f1;
+}
+
+.danger-button-strong {
+  color: #fff;
+  border-color: #b42332;
+  background: #b42332;
 }
 
 .table-header {
@@ -1048,6 +1113,13 @@ input[type="file"] {
   border-radius: 12px;
 }
 
+.product-table-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.order-table-scroll,
+.failed-table-scroll,
 .scroll-table {
   max-height: 420px;
   overflow: auto;

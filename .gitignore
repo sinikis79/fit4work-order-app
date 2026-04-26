@@ -1,5 +1,6 @@
 .env
 .venv/
+backups/
 __pycache__/
 *.py[cod]
 *.lock
