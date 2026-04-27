@@ -420,6 +420,7 @@ def build_items_text(items: list[dict]) -> str:
 def build_teams_payload(order: dict) -> dict:
     total_amount = parse_int(order["total_amount"])
     total_amount_formatted = format_currency(total_amount)
+    memo = safe_text(order.get("memo"))
     lines = [
         "[신규 주문 접수]",
         "",
@@ -431,10 +432,59 @@ def build_teams_payload(order: dict) -> dict:
         f"총수량: {order['total_qty']}장",
         f"총 참고금액: {total_amount_formatted}",
     ]
-    if order.get("memo"):
-        lines.extend(["", f"요청사항: {order['memo']}"])
+    if memo:
+        lines.extend(["", f"요청사항: {memo}"])
     text = "\n".join(lines)
+    card_body = [
+        {
+            "type": "TextBlock",
+            "text": "🔔 신규 주문 접수 (FIT4WORK)",
+            "weight": "Bolder",
+            "size": "Large",
+            "wrap": True,
+        },
+        {
+            "type": "FactSet",
+            "facts": [
+                {"title": "거래처명", "value": order["customer_name"]},
+                {"title": "주문번호", "value": order["order_id"]},
+                {"title": "총 수량", "value": f"{order['total_qty']}장"},
+                {"title": "합계 금액", "value": total_amount_formatted},
+            ],
+        },
+        {
+            "type": "TextBlock",
+            "text": "상세 내역",
+            "weight": "Bolder",
+            "spacing": "Medium",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "text": order["items"],
+            "wrap": True,
+        },
+    ]
+    if memo:
+        card_body.extend(
+            [
+                {
+                    "type": "TextBlock",
+                    "text": "요청사항 / 메모",
+                    "weight": "Bolder",
+                    "spacing": "Medium",
+                    "wrap": True,
+                },
+                {
+                    "type": "TextBlock",
+                    "text": memo,
+                    "wrap": True,
+                },
+            ]
+        )
+
     return {
+        "type": "message",
         "title": "신규 주문 접수",
         "customer_name": order["customer_name"],
         "order_id": order["order_id"],
@@ -442,9 +492,35 @@ def build_teams_payload(order: dict) -> dict:
         "total_qty": order["total_qty"],
         "total_amount": order["total_amount"],
         "total_amount_formatted": total_amount_formatted,
-        "memo": order.get("memo", ""),
+        "memo": memo,
         "message": text,
         "text": text,
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.2",
+                    "body": card_body,
+                },
+            }
+        ],
+    }
+
+
+def summarize_teams_payload(payload: dict) -> dict:
+    attachments = payload.get("attachments") if isinstance(payload, dict) else []
+    first_attachment = attachments[0] if attachments else {}
+    content = first_attachment.get("content", {}) if isinstance(first_attachment, dict) else {}
+    return {
+        "type": payload.get("type"),
+        "title": payload.get("title"),
+        "order_id": payload.get("order_id"),
+        "customer_name": payload.get("customer_name"),
+        "text_preview": safe_text(payload.get("text"))[:500],
+        "attachments_count": len(attachments),
+        "card_version": content.get("version"),
     }
 
 
@@ -453,8 +529,9 @@ def send_teams_webhook(order: dict) -> tuple[bool, str]:
     if not webhook_url:
         return False, "TEAMS_WEBHOOK_URL is empty."
 
+    payload = build_teams_payload(order)
     try:
-        response = requests.post(webhook_url, json=build_teams_payload(order), timeout=10)
+        response = requests.post(webhook_url, json=payload, timeout=10)
         logger.info(
             "Teams webhook response for %s: status=%s body=%s",
             order["order_id"],
@@ -463,18 +540,29 @@ def send_teams_webhook(order: dict) -> tuple[bool, str]:
         )
         if 200 <= response.status_code < 300:
             return True, ""
+        logger.warning(
+            "Teams webhook non-success for %s: payload_preview=%s",
+            order["order_id"],
+            summarize_teams_payload(payload),
+        )
         return False, f"Teams webhook returned {response.status_code}: {response.text}"
     except requests.RequestException as exc:
         response = getattr(exc, "response", None)
         if response is not None:
             logger.exception(
-                "Teams webhook request failed for %s: status=%s body=%s",
+                "Teams webhook request failed for %s: status=%s body=%s payload_preview=%s",
                 order["order_id"],
                 response.status_code,
                 response.text,
+                summarize_teams_payload(payload),
             )
         else:
-            logger.exception("Teams webhook request failed for %s: %s", order["order_id"], exc)
+            logger.exception(
+                "Teams webhook request failed for %s: %s payload_preview=%s",
+                order["order_id"],
+                exc,
+                summarize_teams_payload(payload),
+            )
         return False, str(exc)
 
 
