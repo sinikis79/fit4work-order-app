@@ -427,7 +427,7 @@ def build_teams_payload(order: dict) -> dict:
     total_amount = parse_int(order["total_amount"])
     total_amount_formatted = format_currency(total_amount)
     memo = safe_text(order.get("memo"))
-    items_text = order["items"].replace("\n", "<br>")
+    item_lines = [safe_text(item) for item in order["items"].splitlines() if safe_text(item)]
     lines = [
         "[신규 주문 접수]",
         "",
@@ -466,12 +466,16 @@ def build_teams_payload(order: dict) -> dict:
             "spacing": "Medium",
             "wrap": True,
         },
-        {
-            "type": "TextBlock",
-            "text": items_text,
-            "wrap": True,
-        },
     ]
+    for item in item_lines:
+        card_body.append(
+            {
+                "type": "TextBlock",
+                "text": item,
+                "wrap": True,
+                "spacing": "Small",
+            }
+        )
     if memo:
         card_body.extend(
             [
