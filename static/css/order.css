@@ -389,9 +389,9 @@ button:disabled {
   top: 0;
   z-index: 25;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin: 0 -12px;
-  padding: 10px 12px 12px;
+  padding: 9px 10px 11px;
   overflow-x: auto;
   background: #f6fbf9;
   backdrop-filter: blur(12px);
@@ -407,12 +407,13 @@ button:disabled {
 
 .category-tab {
   flex: 0 0 auto;
-  min-height: 40px;
-  padding: 0 16px;
+  min-height: 38px;
+  padding: 0 12px;
   border: 1px solid rgba(15, 111, 100, 0.12);
   border-radius: 999px;
   color: #40655f;
   background: #fff;
+  font-size: 0.84rem;
   font-weight: 900;
   box-shadow: 0 6px 16px rgba(15, 111, 100, 0.07);
 }

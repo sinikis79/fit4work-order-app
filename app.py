@@ -68,6 +68,7 @@ FAILED_ORDER_HEADERS = [
     "error_message",
 ]
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+CATEGORY_ORDER = ["조리복", "앞치마", "바지", "모자", "위생모", "위생복"]
 
 FREE_SHIPPING_THRESHOLD = int(os.getenv("FREE_SHIPPING_THRESHOLD", "100000"))
 DEFAULT_PORT = int(os.getenv("APP_PORT", "5001"))
@@ -417,6 +418,11 @@ def build_items_text(items: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def sort_categories(categories: set[str]) -> list[str]:
+    category_rank = {category: index for index, category in enumerate(CATEGORY_ORDER)}
+    return sorted(categories, key=lambda category: (category_rank.get(category, len(CATEGORY_ORDER)), category))
+
+
 def build_teams_payload(order: dict) -> dict:
     total_amount = parse_int(order["total_amount"])
     total_amount_formatted = format_currency(total_amount)
@@ -752,7 +758,7 @@ def inject_settings():
 def order_page():
     initialize_files()
     products = load_products()
-    categories = sorted({product["category"] for product in products if product["category"]})
+    categories = sort_categories({product["category"] for product in products if product["category"]})
     return render_template("order.html", products=products, categories=categories)
 
 
