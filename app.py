@@ -418,6 +418,8 @@ def build_items_text(items: list[dict]) -> str:
 
 
 def build_teams_payload(order: dict) -> dict:
+    total_amount = parse_int(order["total_amount"])
+    total_amount_formatted = format_currency(total_amount)
     lines = [
         "[신규 주문 접수]",
         "",
@@ -427,12 +429,23 @@ def build_teams_payload(order: dict) -> dict:
         order["items"],
         "",
         f"총수량: {order['total_qty']}장",
-        f"총 참고금액: {format_currency(parse_int(order['total_amount']))}",
+        f"총 참고금액: {total_amount_formatted}",
     ]
     if order.get("memo"):
         lines.extend(["", f"요청사항: {order['memo']}"])
     text = "\n".join(lines)
-    return {"text": text}
+    return {
+        "title": "신규 주문 접수",
+        "customer_name": order["customer_name"],
+        "order_id": order["order_id"],
+        "items": order["items"],
+        "total_qty": order["total_qty"],
+        "total_amount": order["total_amount"],
+        "total_amount_formatted": total_amount_formatted,
+        "memo": order.get("memo", ""),
+        "message": text,
+        "text": text,
+    }
 
 
 def send_teams_webhook(order: dict) -> tuple[bool, str]:
@@ -442,10 +455,26 @@ def send_teams_webhook(order: dict) -> tuple[bool, str]:
 
     try:
         response = requests.post(webhook_url, json=build_teams_payload(order), timeout=10)
-        response.raise_for_status()
-        return True, ""
+        logger.info(
+            "Teams webhook response for %s: status=%s body=%s",
+            order["order_id"],
+            response.status_code,
+            response.text,
+        )
+        if 200 <= response.status_code < 300:
+            return True, ""
+        return False, f"Teams webhook returned {response.status_code}: {response.text}"
     except requests.RequestException as exc:
-        logger.exception("Teams webhook failed for %s", order["order_id"])
+        response = getattr(exc, "response", None)
+        if response is not None:
+            logger.exception(
+                "Teams webhook request failed for %s: status=%s body=%s",
+                order["order_id"],
+                response.status_code,
+                response.text,
+            )
+        else:
+            logger.exception("Teams webhook request failed for %s: %s", order["order_id"], exc)
         return False, str(exc)
 
 
