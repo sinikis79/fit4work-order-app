@@ -10,15 +10,18 @@
   <main class="mobile-frame">
     <header class="order-header">
       <div class="header-title-row">
-        <div>
-          <span class="brand-chip">Fit4Work</span>
-          <h1>간편 주문하기</h1>
-        </div>
+        <span class="brand-chip">Fit4Work</span>
         <button id="change-customer-button" class="change-customer-button" type="button">거래처 다시 입력</button>
       </div>
+      <h1>간편 주문하기</h1>
       <div class="header-meta">
-        <span>거래처명</span>
+        <span>거래처</span>
         <strong id="customer-name-display">입력 필요</strong>
+      </div>
+      <div class="collapsed-summary" aria-hidden="true">
+        <span>거래처 <strong id="collapsed-customer-name-display">입력 필요</strong></span>
+        <strong id="collapsed-total-amount-label">0원</strong>
+        <span id="collapsed-shipping-label">무료배송까지 {{ "{:,}".format(free_shipping_threshold) }}원</span>
       </div>
       <div class="header-total-row">
         <div>
@@ -118,7 +121,7 @@
   </main>
 
   <section class="bottom-order-bar">
-    <button id="open-mini-order-button" class="bottom-left" type="button">
+    <button id="open-mini-order-button" class="bottom-left" type="button" aria-label="주문내역 열기">
       <span class="bottom-cart-icon" aria-hidden="true">🛒</span>
       <span class="bottom-cart-copy">
         <strong id="selected-count-label">주문내역 0개</strong>
@@ -135,8 +138,8 @@
     <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="mini-order-title">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-header">
-        <h2 id="mini-order-title">미니 주문내역</h2>
-        <button id="close-mini-order-button" class="sheet-close-button" type="button" aria-label="미니 주문내역 닫기">닫기</button>
+        <h2 id="mini-order-title">주문내역</h2>
+        <button id="close-mini-order-button" class="sheet-close-button" type="button" aria-label="주문내역 닫기">닫기</button>
       </div>
       <div id="mini-order-items" class="mini-order-items"></div>
       <div class="mini-order-summary">
@@ -205,7 +208,8 @@
 
   <section id="complete-modal" class="modal is-hidden" aria-hidden="true">
     <div class="modal-panel complete-panel">
-      <h2>주문이 접수되었습니다.</h2>
+      <h2>✅ 주문이 접수되었습니다</h2>
+      <p>담당자가 확인 후 연락드릴게요.</p>
       <p>주문번호: <strong id="complete-order-id">-</strong></p>
       <button id="complete-close-button" class="confirm-button" type="button">확인</button>
     </div>

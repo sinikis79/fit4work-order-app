@@ -3,12 +3,15 @@ const CUSTOMER_STORAGE_KEY = "fit4work_customer_name";
 const customerModal = document.getElementById("customer-modal");
 const customerInput = document.getElementById("customer-name-input");
 const customerNameDisplay = document.getElementById("customer-name-display");
+const collapsedCustomerNameDisplay = document.getElementById("collapsed-customer-name-display");
 const saveCustomerButton = document.getElementById("save-customer-button");
 const changeCustomerButton = document.getElementById("change-customer-button");
 const categoryTabs = document.getElementById("category-tabs");
 const orderSection = document.getElementById("order-section");
 const totalAmountLabel = document.getElementById("total-amount-label");
+const collapsedTotalAmountLabel = document.getElementById("collapsed-total-amount-label");
 const shippingStatusLabel = document.getElementById("shipping-status-label");
+const collapsedShippingLabel = document.getElementById("collapsed-shipping-label");
 const shippingProgressBar = document.getElementById("shipping-progress-bar");
 const selectedCountLabel = document.getElementById("selected-count-label");
 const floatingTotalLabel = document.getElementById("floating-total-label");
@@ -36,6 +39,8 @@ const cart = {};
 let currentCustomerName = "";
 let isCustomerModalRequired = true;
 let isSubmittingOrder = false;
+let sheetScrollY = 0;
+let previousTotalAmount = 0;
 
 function cssEscape(value) {
   if (window.CSS && typeof window.CSS.escape === "function") {
@@ -69,10 +74,19 @@ function syncCustomerUI() {
   const customerName = getCustomerName();
   const hasCustomer = Boolean(customerName);
 
-  customerNameDisplay.textContent = customerName || "입력 필요";
-  orderSection.classList.toggle("is-locked", !hasCustomer);
-  orderSection.setAttribute("aria-hidden", String(!hasCustomer));
-  customerInput.value = customerName;
+  if (customerNameDisplay) {
+    customerNameDisplay.textContent = customerName || "입력 필요";
+  }
+  if (collapsedCustomerNameDisplay) {
+    collapsedCustomerNameDisplay.textContent = customerName || "입력 필요";
+  }
+  if (orderSection) {
+    orderSection.classList.toggle("is-locked", !hasCustomer);
+    orderSection.setAttribute("aria-hidden", String(!hasCustomer));
+  }
+  if (customerInput) {
+    customerInput.value = customerName;
+  }
 
   if (!hasCustomer) {
     openCustomerModal(true);
@@ -216,22 +230,77 @@ function getTotals() {
 function renderSummary({ skipMiniOrderRender = false } = {}) {
   const { totalQty, totalAmount } = getTotals();
   const progress = Math.min(100, Math.round((totalAmount / freeShippingThreshold) * 100));
+  const totalAmountText = formatCurrency(totalAmount);
+  const remainingAmount = freeShippingThreshold - totalAmount;
 
-  totalAmountLabel.textContent = formatCurrency(totalAmount);
-  floatingTotalLabel.textContent = formatCurrency(totalAmount);
-  selectedCountLabel.textContent = `주문내역 ${totalQty}개`;
-  shippingProgressBar.style.width = `${progress}%`;
-
-  if (totalAmount >= freeShippingThreshold) {
-    shippingStatusLabel.textContent = "무료배송 기준 충족";
-  } else {
-    shippingStatusLabel.textContent = `무료배송까지 ${formatCurrency(freeShippingThreshold - totalAmount)}`;
+  if (totalAmountLabel) {
+    totalAmountLabel.textContent = totalAmountText;
+  }
+  if (collapsedTotalAmountLabel) {
+    collapsedTotalAmountLabel.textContent = totalAmountText;
+  }
+  if (floatingTotalLabel) {
+    floatingTotalLabel.textContent = totalAmountText;
+  }
+  if (selectedCountLabel) {
+    selectedCountLabel.textContent = `주문내역 ${totalQty}개`;
+  }
+  if (shippingProgressBar) {
+    shippingProgressBar.style.width = `${progress}%`;
   }
 
-  openConfirmButton.disabled = isSubmittingOrder || totalQty === 0 || !getCustomerName();
+  if (totalAmount >= freeShippingThreshold) {
+    if (shippingStatusLabel) {
+      shippingStatusLabel.textContent = "무료배송 기준 충족";
+    }
+    if (collapsedShippingLabel) {
+      collapsedShippingLabel.textContent = "무료배송 달성";
+    }
+  } else {
+    if (shippingStatusLabel) {
+      shippingStatusLabel.textContent = `무료배송까지 ${formatCurrency(remainingAmount)}`;
+    }
+    if (collapsedShippingLabel) {
+      collapsedShippingLabel.textContent = `+${formatCurrency(remainingAmount)} 더 담으면 무료배송`;
+    }
+  }
 
-  if (!skipMiniOrderRender && !miniOrderSheet.classList.contains("is-hidden")) {
+  if (openConfirmButton) {
+    openConfirmButton.disabled = isSubmittingOrder || totalQty === 0 || !getCustomerName();
+  }
+
+  if (totalAmount !== previousTotalAmount) {
+    animateAmountChange();
+    previousTotalAmount = totalAmount;
+  }
+
+  if (!skipMiniOrderRender && miniOrderSheet && !miniOrderSheet.classList.contains("is-hidden")) {
     renderMiniOrderSheet();
+  }
+}
+
+function animateAmountChange() {
+  [totalAmountLabel, collapsedTotalAmountLabel, floatingTotalLabel].forEach((element) => {
+    if (!element) {
+      return;
+    }
+    element.classList.remove("amount-pulse");
+    void element.offsetWidth;
+    element.classList.add("amount-pulse");
+  });
+}
+
+function runStartupStep(label, callback) {
+  try {
+    callback();
+  } catch (error) {
+    console.error(`Order page startup failed during ${label}`, error);
+  }
+}
+
+function ensureInitialCustomerModal() {
+  if (!getCustomerName()) {
+    openCustomerModal(true);
   }
 }
 
@@ -254,7 +323,7 @@ function handleSizeClick(button) {
 
 function handleQtyClick(button) {
   if (!getCustomerName()) {
-    customerInput.focus();
+    customerInput?.focus();
     return;
   }
 
@@ -270,7 +339,7 @@ function handleQtyClick(button) {
 
 function handleQtyInput(input) {
   if (!getCustomerName()) {
-    customerInput.focus();
+    customerInput?.focus();
     return;
   }
 
@@ -316,6 +385,10 @@ function filterCategory(category) {
 }
 
 function initializeCategoryTabs() {
+  if (!categoryTabs) {
+    return;
+  }
+
   const defaultTab = categoryTabs.querySelector('[data-category="전체"]');
   if (!defaultTab) {
     return;
@@ -328,6 +401,10 @@ function initializeCategoryTabs() {
 }
 
 function buildModal() {
+  if (!confirmCustomerInput || !modalTotalQty || !modalTotalAmount || !modalItems) {
+    return;
+  }
+
   const { items, totalQty, totalAmount } = getTotals();
   confirmCustomerInput.value = getCustomerName();
   if (confirmMemoInput) {
@@ -355,6 +432,10 @@ function buildModal() {
 }
 
 function renderMiniOrderSheet() {
+  if (!miniOrderItems || !miniTotalQty || !miniTotalAmount) {
+    return;
+  }
+
   const { items, totalQty, totalAmount } = getTotals();
   miniOrderItems.innerHTML = "";
   miniTotalQty.textContent = `${totalQty}장`;
@@ -423,38 +504,130 @@ function renderMiniOrderSheet() {
   });
 }
 
-function openModal(modal) {
-  modal.classList.remove("is-hidden");
-  modal.setAttribute("aria-hidden", "false");
+function blurActiveFormControl() {
+  const activeElement = document.activeElement;
+  if (activeElement?.matches?.("input, textarea, select")) {
+    activeElement.blur();
+  }
 }
 
-function closeModal(modal) {
+function resetOverlayScroll(overlay) {
+  const scrollTargets = [
+    overlay,
+    overlay.querySelector(".modal-panel"),
+    overlay.querySelector(".sheet-panel"),
+    overlay.querySelector(".mini-order-items"),
+  ].filter(Boolean);
+
+  const reset = () => {
+    scrollTargets.forEach((target) => {
+      target.scrollTop = 0;
+    });
+  };
+
+  reset();
+  window.requestAnimationFrame(reset);
+  window.setTimeout(reset, 0);
+}
+
+function openModal(modal) {
+  if (!modal) {
+    return;
+  }
+
+  blurActiveFormControl();
+  lockBodyScroll();
+  modal.classList.remove("is-hidden");
+  modal.setAttribute("aria-hidden", "false");
+  resetOverlayScroll(modal);
+}
+
+function closeModal(modal, { keepBodyLocked = false } = {}) {
+  if (!modal) {
+    return;
+  }
+
   modal.classList.add("is-hidden");
   modal.setAttribute("aria-hidden", "true");
+  if (!keepBodyLocked) {
+    unlockBodyScroll();
+  }
 }
 
 function openCustomerModal(isRequired = false) {
+  if (!customerModal) {
+    return;
+  }
+
   isCustomerModalRequired = isRequired;
-  customerInput.value = isRequired ? "" : getCustomerName();
+  if (customerInput) {
+    customerInput.value = isRequired ? "" : getCustomerName();
+  }
   customerModal.classList.remove("is-hidden");
   customerModal.setAttribute("aria-hidden", "false");
-  window.setTimeout(() => customerInput.focus(), 50);
+  window.setTimeout(() => customerInput?.focus(), 50);
 }
 
 function closeCustomerModal() {
+  if (!customerModal) {
+    return;
+  }
+
   customerModal.classList.add("is-hidden");
   customerModal.setAttribute("aria-hidden", "true");
 }
 
+function lockBodyScroll() {
+  if (document.body.classList.contains("is-sheet-open")) {
+    return;
+  }
+
+  sheetScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.style.position = "fixed";
+  document.body.style.top = `-${sheetScrollY}px`;
+  document.body.style.left = "0";
+  document.body.style.right = "0";
+  document.body.style.width = "100%";
+  document.body.style.overflow = "hidden";
+  document.body.classList.add("is-sheet-open");
+}
+
+function unlockBodyScroll() {
+  if (!document.body.classList.contains("is-sheet-open")) {
+    return;
+  }
+
+  document.body.classList.remove("is-sheet-open");
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  document.body.style.width = "";
+  document.body.style.overflow = "";
+  window.scrollTo(0, sheetScrollY);
+}
+
 function openSheet(sheet) {
+  if (!sheet) {
+    return;
+  }
+
+  blurActiveFormControl();
   renderMiniOrderSheet();
+  lockBodyScroll();
   sheet.classList.remove("is-hidden");
   sheet.setAttribute("aria-hidden", "false");
+  resetOverlayScroll(sheet);
 }
 
 function closeSheet(sheet) {
+  if (!sheet) {
+    return;
+  }
+
   sheet.classList.add("is-hidden");
   sheet.setAttribute("aria-hidden", "true");
+  unlockBodyScroll();
 }
 
 function resetCart() {
@@ -543,12 +716,23 @@ function commitMiniQtyInput(input) {
 
 function resetCustomer() {
   setCustomerName("");
-  customerNameDisplay.textContent = "입력 필요";
-  customerInput.value = "";
-  confirmCustomerInput.value = "";
+  if (customerNameDisplay) {
+    customerNameDisplay.textContent = "입력 필요";
+  }
+  if (collapsedCustomerNameDisplay) {
+    collapsedCustomerNameDisplay.textContent = "입력 필요";
+  }
+  if (customerInput) {
+    customerInput.value = "";
+  }
+  if (confirmCustomerInput) {
+    confirmCustomerInput.value = "";
+  }
   resetMemoInput();
-  orderSection.classList.add("is-locked");
-  orderSection.setAttribute("aria-hidden", "true");
+  if (orderSection) {
+    orderSection.classList.add("is-locked");
+    orderSection.setAttribute("aria-hidden", "true");
+  }
 }
 
 function getMemoValue() {
@@ -562,11 +746,19 @@ function resetMemoInput() {
 }
 
 function updateConfirmSubmitState() {
+  if (!submitConfirmButton || !confirmCustomerInput) {
+    return;
+  }
+
   submitConfirmButton.disabled = isSubmittingOrder || !confirmCustomerInput.value.trim();
 }
 
 async function submitOrder() {
   if (isSubmittingOrder) {
+    return;
+  }
+  if (!confirmCustomerInput || !submitConfirmButton) {
+    alert("주문 확인 화면을 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
     return;
   }
 
@@ -588,12 +780,18 @@ async function submitOrder() {
   }
 
   setCustomerName(customerName);
-  customerNameDisplay.textContent = customerName;
+  if (customerNameDisplay) {
+    customerNameDisplay.textContent = customerName;
+  }
+  if (collapsedCustomerNameDisplay) {
+    collapsedCustomerNameDisplay.textContent = customerName;
+  }
 
   isSubmittingOrder = true;
   updateConfirmSubmitState();
   renderSummary();
-  submitConfirmButton.textContent = "전송 중...";
+  submitConfirmButton.classList.add("is-loading");
+  submitConfirmButton.textContent = "주문 전송 중...";
 
   try {
     const response = await fetch("/submit_order", {
@@ -631,32 +829,37 @@ async function submitOrder() {
         responseText,
         result,
       });
-      const message = Array.isArray(result.errors) ? result.errors.join(" ") : "주문 전송에 실패했습니다.";
+      const message = Array.isArray(result.errors)
+        ? `${result.errors.join(" ")} 잠시 후 다시 시도해주세요.`
+        : "주문 전송에 실패했습니다. 잠시 후 다시 시도해주세요.";
       alert(message);
       return;
     }
 
-    closeModal(confirmModal);
-    completeOrderId.textContent = result.order_id || "-";
+    closeModal(confirmModal, { keepBodyLocked: true });
+    if (completeOrderId) {
+      completeOrderId.textContent = result.order_id || "-";
+    }
     openModal(completeModal);
     resetCart();
     resetCustomer();
     resetMemoInput();
   } catch (error) {
     console.error("Order submit network error", error);
-    alert("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    alert("주문 전송에 실패했습니다. 잠시 후 다시 시도해주세요.");
   } finally {
     isSubmittingOrder = false;
+    submitConfirmButton.classList.remove("is-loading");
     submitConfirmButton.textContent = "주문 확정";
     updateConfirmSubmitState();
     renderSummary();
   }
 }
 
-saveCustomerButton.addEventListener("click", () => {
-  const name = customerInput.value.trim();
+saveCustomerButton?.addEventListener("click", () => {
+  const name = customerInput?.value.trim() || "";
   if (!name) {
-    customerInput.focus();
+    customerInput?.focus();
     return;
   }
 
@@ -665,18 +868,20 @@ saveCustomerButton.addEventListener("click", () => {
   renderSummary();
 });
 
-customerInput.addEventListener("keydown", (event) => {
+customerInput?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
-    saveCustomerButton.click();
+    saveCustomerButton?.click();
   }
 });
 
-changeCustomerButton.addEventListener("click", () => {
-  customerInput.value = getCustomerName();
+changeCustomerButton?.addEventListener("click", () => {
+  if (customerInput) {
+    customerInput.value = getCustomerName();
+  }
   openCustomerModal(false);
 });
 
-categoryTabs.addEventListener("click", (event) => {
+categoryTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-category]");
   if (!button) {
     return;
@@ -688,7 +893,7 @@ categoryTabs.addEventListener("click", (event) => {
   filterCategory(button.dataset.category);
 });
 
-orderSection.addEventListener("click", (event) => {
+orderSection?.addEventListener("click", (event) => {
   const sizeButton = event.target.closest("[data-size-button]");
   if (sizeButton) {
     handleSizeClick(sizeButton);
@@ -701,36 +906,36 @@ orderSection.addEventListener("click", (event) => {
   }
 });
 
-orderSection.addEventListener("input", (event) => {
+orderSection?.addEventListener("input", (event) => {
   const qtyInput = event.target.closest("[data-active-qty]");
   if (qtyInput) {
     handleQtyInput(qtyInput);
   }
 });
 
-orderSection.addEventListener("keydown", (event) => {
+orderSection?.addEventListener("keydown", (event) => {
   const qtyInput = event.target.closest("[data-active-qty]");
   if (qtyInput && event.key === "Enter") {
     qtyInput.blur();
   }
 });
 
-orderSection.addEventListener("focusout", (event) => {
+orderSection?.addEventListener("focusout", (event) => {
   const qtyInput = event.target.closest("[data-active-qty]");
   if (qtyInput) {
     commitQtyInput(qtyInput);
   }
 });
 
-openConfirmButton.addEventListener("click", () => {
+openConfirmButton?.addEventListener("click", () => {
   buildModal();
   updateConfirmSubmitState();
   openModal(confirmModal);
 });
 
-openMiniOrderButton.addEventListener("click", () => openSheet(miniOrderSheet));
-closeMiniOrderButton.addEventListener("click", () => closeSheet(miniOrderSheet));
-miniOrderSheet.addEventListener("click", (event) => {
+openMiniOrderButton?.addEventListener("click", () => openSheet(miniOrderSheet));
+closeMiniOrderButton?.addEventListener("click", () => closeSheet(miniOrderSheet));
+miniOrderSheet?.addEventListener("click", (event) => {
   const miniActionButton = event.target.closest("[data-mini-action]");
   if (miniActionButton) {
     handleMiniOrderAction(miniActionButton);
@@ -742,28 +947,28 @@ miniOrderSheet.addEventListener("click", (event) => {
   }
 });
 
-miniOrderSheet.addEventListener("input", (event) => {
+miniOrderSheet?.addEventListener("input", (event) => {
   const qtyInput = event.target.closest("[data-mini-qty-input]");
   if (qtyInput) {
     handleMiniQtyInput(qtyInput);
   }
 });
 
-miniOrderSheet.addEventListener("keydown", (event) => {
+miniOrderSheet?.addEventListener("keydown", (event) => {
   const qtyInput = event.target.closest("[data-mini-qty-input]");
   if (qtyInput && event.key === "Enter") {
     qtyInput.blur();
   }
 });
 
-miniOrderSheet.addEventListener("focusout", (event) => {
+miniOrderSheet?.addEventListener("focusout", (event) => {
   const qtyInput = event.target.closest("[data-mini-qty-input]");
   if (qtyInput) {
     commitMiniQtyInput(qtyInput);
   }
 });
 
-customerModal.addEventListener("click", (event) => {
+customerModal?.addEventListener("click", (event) => {
   if (!event.target.closest("[data-customer-modal-backdrop]")) {
     return;
   }
@@ -772,27 +977,37 @@ customerModal.addEventListener("click", (event) => {
   }
 });
 
-confirmModal.addEventListener("click", (event) => {
+confirmModal?.addEventListener("click", (event) => {
   if (event.target.closest("[data-confirm-modal-backdrop]")) {
     closeModal(confirmModal);
   }
 });
 
-confirmCustomerInput.addEventListener("input", updateConfirmSubmitState);
-closeConfirmButton.addEventListener("click", () => {
-  closeModal(confirmModal);
+confirmCustomerInput?.addEventListener("input", updateConfirmSubmitState);
+closeConfirmButton?.addEventListener("click", () => {
+  closeModal(confirmModal, { keepBodyLocked: true });
   openSheet(miniOrderSheet);
 });
-submitConfirmButton.addEventListener("click", submitOrder);
-completeCloseButton.addEventListener("click", () => {
+submitConfirmButton?.addEventListener("click", submitOrder);
+completeCloseButton?.addEventListener("click", () => {
   closeModal(completeModal);
   syncCustomerUI();
 });
 
-clearStoredCustomerName();
-syncCustomerUI();
-initializeCategoryTabs();
-document.querySelectorAll("[data-quantity-panel]").forEach((panel) => {
-  updateProductPanel(panel.dataset.productCode);
+runStartupStep("storage reset", clearStoredCustomerName);
+runStartupStep("customer modal initialization", syncCustomerUI);
+runStartupStep("category tab initialization", initializeCategoryTabs);
+runStartupStep("product panel initialization", () => {
+  document.querySelectorAll("[data-quantity-panel]").forEach((panel) => {
+    updateProductPanel(panel.dataset.productCode);
+  });
 });
-renderSummary();
+runStartupStep("summary initialization", renderSummary);
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    runStartupStep("post-DOM customer modal check", ensureInitialCustomerModal);
+  });
+} else {
+  runStartupStep("post-DOM customer modal check", ensureInitialCustomerModal);
+}
