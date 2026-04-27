@@ -428,16 +428,12 @@ def build_teams_payload(order: dict) -> dict:
     total_amount_formatted = format_currency(total_amount)
     memo = safe_text(order.get("memo"))
     item_lines = [safe_text(item) for item in order["items"].splitlines() if safe_text(item)]
+    bullet_item_lines = [f"• {item}" for item in item_lines]
     lines = [
         "[신규 주문 접수]",
-        "",
-        f"거래처: {order['customer_name']}",
-        f"주문번호: {order['order_id']}",
-        "",
-        order["items"],
-        "",
-        f"총수량: {order['total_qty']}장",
-        f"총 참고금액: {total_amount_formatted}",
+        f"거래처: {order['customer_name']} | 주문번호: {order['order_id']}",
+        *bullet_item_lines,
+        f"총수량: {order['total_qty']}장 | 총 참고금액: {total_amount_formatted}",
     ]
     if memo:
         lines.extend(["", f"요청사항: {memo}"])
@@ -451,13 +447,10 @@ def build_teams_payload(order: dict) -> dict:
             "wrap": True,
         },
         {
-            "type": "FactSet",
-            "facts": [
-                {"title": "거래처명", "value": order["customer_name"]},
-                {"title": "주문번호", "value": order["order_id"]},
-                {"title": "총 수량", "value": f"{order['total_qty']}장"},
-                {"title": "합계 금액", "value": total_amount_formatted},
-            ],
+            "type": "TextBlock",
+            "text": f"거래처: {order['customer_name']} | 주문번호: {order['order_id']}",
+            "wrap": True,
+            "spacing": "Small",
         },
         {
             "type": "TextBlock",
@@ -467,7 +460,7 @@ def build_teams_payload(order: dict) -> dict:
             "wrap": True,
         },
     ]
-    for item in item_lines:
+    for item in bullet_item_lines:
         card_body.append(
             {
                 "type": "TextBlock",
@@ -476,6 +469,14 @@ def build_teams_payload(order: dict) -> dict:
                 "spacing": "Small",
             }
         )
+    card_body.append(
+        {
+            "type": "TextBlock",
+            "text": f"총수량: {order['total_qty']}장 | 총 참고금액: {total_amount_formatted}",
+            "wrap": True,
+            "spacing": "Medium",
+        }
+    )
     if memo:
         card_body.extend(
             [
