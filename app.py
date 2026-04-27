@@ -427,6 +427,7 @@ def build_teams_payload(order: dict) -> dict:
     total_amount = parse_int(order["total_amount"])
     total_amount_formatted = format_currency(total_amount)
     memo = safe_text(order.get("memo"))
+    items_text = order["items"].replace("\n", "<br>")
     lines = [
         "[신규 주문 접수]",
         "",
@@ -467,7 +468,7 @@ def build_teams_payload(order: dict) -> dict:
         },
         {
             "type": "TextBlock",
-            "text": order["items"],
+            "text": items_text,
             "wrap": True,
         },
     ]
